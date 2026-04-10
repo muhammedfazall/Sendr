@@ -1,0 +1,1 @@
+DELETE FROM plans WHERE name IN ('free', 'pro', 'max');
