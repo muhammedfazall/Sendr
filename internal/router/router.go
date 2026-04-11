@@ -20,17 +20,39 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 
+	// — Build dependency chain: repository → service → handler —
+
+	// Auth
+	authRepo := auth.NewRepository(pool)
+	authService := auth.NewService(authRepo, cfg)
+	authHandler := auth.NewHandler(authService)
+
+	// API Keys
+	apikeyRepo := apikey.NewRepository(pool)
+	apikeyService := apikey.NewService(apikeyRepo)
+	apikeyHandler := apikey.NewHandler(apikeyService)
+
+	// Health
+	healthService := health.NewService(pool, rdb)
+	healthHandler := health.NewHandler(healthService)
+
+	// Me
+	meService := me.NewService()
+	meHandler := me.NewHandler(meService)
+
+	// — Routes —
+
 	// Public
-	r.Get("/health", health.Check(pool, rdb))
-	r.Get("/auth/google", auth.GoogleLogin(cfg))
-	r.Get("/auth/google/callback", auth.GoogleCallback(cfg, pool))
+	r.Get("/health", healthHandler.Check())
+	r.Get("/auth/google", authHandler.GoogleLogin())
+	r.Get("/auth/google/callback", authHandler.GoogleCallback())
 
 	// JWT protected
 	jwt := middleware.JWTAuth(cfg.JWTPublicKeyPath)
-	r.With(jwt).Get("/me", me.Get())
-	r.With(jwt).Post("/apikeys", apikey.Create(pool))
-	r.With(jwt).Get("/apikeys", apikey.List(pool))
-	r.With(jwt).Delete("/apikeys/{id}", apikey.Revoke(pool))
+	r.With(jwt).Get("/me", meHandler.Get())
+	r.With(jwt).Post("/apikeys", apikeyHandler.Create())
+	r.With(jwt).Get("/apikeys", apikeyHandler.List())
+	r.With(jwt).Delete("/apikeys/{id}", apikeyHandler.Revoke())
 
 	return r
 }

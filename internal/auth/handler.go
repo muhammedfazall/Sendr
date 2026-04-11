@@ -1,33 +1,24 @@
 package auth
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
-	"os"
-	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/muhammedfazall/Sendr/pkg/config"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 )
 
-// oauthConfig builds the Google OAuth config from your .env values
-func oauthConfig(cfg *config.Config) *oauth2.Config {
-	return &oauth2.Config{
-		ClientID:     cfg.GoogleClientID,
-		ClientSecret: cfg.GoogleClientSecret,
-		RedirectURL:  "http://localhost:8080/auth/google/callback",
-		Scopes:       []string{"openid", "email", "profile"},
-		Endpoint:     google.Endpoint,
-	}
+// Handler handles HTTP requests for authentication.
+type Handler struct {
+	service *Service
 }
 
-// GoogleLogin redirects the user to Google's consent screen
-func GoogleLogin(cfg *config.Config) http.HandlerFunc {
+// NewHandler creates a new auth Handler.
+func NewHandler(service *Service) *Handler {
+	return &Handler{service: service}
+}
+
+// GoogleLogin redirects the user to Google's consent screen.
+func (h *Handler) GoogleLogin() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Generate a random state token to prevent CSRF attacks
 		state := uuid.NewString()
@@ -43,24 +34,16 @@ func GoogleLogin(cfg *config.Config) http.HandlerFunc {
 		})
 
 		// Redirect browser to Google
-		url := oauthConfig(cfg).AuthCodeURL(state)
+		url := h.service.GetAuthURL(state)
 		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 	}
 }
 
-// googleUser is what Google's userinfo API returns
-type googleUser struct {
-	ID    string `json:"sub"`
-	Email string `json:"email"`
-	Name  string `json:"name"`
-}
-
-// GoogleCallback handles the redirect back from Google
-func GoogleCallback(cfg *config.Config, db *pgxpool.Pool) http.HandlerFunc {
+// GoogleCallback handles the redirect back from Google.
+func (h *Handler) GoogleCallback() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Step 1 — verify state matches what we set in the cookie
 		cookie, err := r.Cookie("oauth_state")
-
 		stateParam := r.URL.Query().Get("state")
 
 		if err != nil || cookie.Value != stateParam {
@@ -68,83 +51,15 @@ func GoogleCallback(cfg *config.Config, db *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		// Step 2 — exchange the code Google gave us for an access token
+		// Step 2 — delegate to service for token exchange, user upsert, JWT signing
 		code := r.URL.Query().Get("code")
-		token, err := oauthConfig(cfg).Exchange(context.Background(), code)
+		tokens, err := h.service.HandleGoogleCallback(r.Context(), code)
 		if err != nil {
-			http.Error(w, "failed to exchange token", http.StatusInternalServerError)
-			return
-		}
-
-		// Step 3 — use the access token to fetch the user's profile from Google
-		client := oauthConfig(cfg).Client(context.Background(), token)
-		resp, err := client.Get("https://www.googleapis.com/oauth2/v3/userinfo")
-		if err != nil {
-			http.Error(w, "failed to get user info", http.StatusInternalServerError)
-			return
-		}
-		defer resp.Body.Close()
-
-		// Step 4 — decode the profile JSON
-		var gUser googleUser
-		if err := json.NewDecoder(resp.Body).Decode(&gUser); err != nil {
-			http.Error(w, "failed to decode user info", http.StatusInternalServerError)
-			return
-		}
-
-		// Step 5 — upsert user in DB and get their UUID
-		userID, err := upsertUser(db, gUser.ID, gUser.Email, gUser.Name)
-		if err != nil {
-			http.Error(w, "failed to save user", http.StatusInternalServerError)
-			return
-		}
-
-		// Step 6 — sign JWT with the real UUID (not Google ID)
-		jwtToken, err := signJWT(cfg, userID, gUser.Email)
-		if err != nil {
-			http.Error(w, "failed to sign token", http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"token": jwtToken})
+		json.NewEncoder(w).Encode(tokens)
 	}
-}
-
-// signJWT creates a signed JWT token for the user
-func signJWT(cfg *config.Config, userID, email string) (string, error) {
-	// Load the private key from disk
-	keyBytes, err := os.ReadFile(cfg.JWTPrivateKeyPath)
-	if err != nil {
-		return "", err
-	}
-
-	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM(keyBytes)
-	if err != nil {
-		return "", err
-	}
-
-	// Build the claims — this is the data stored inside the token
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"email":   email,
-		"exp":     time.Now().Add(24 * time.Hour).Unix(), // expires in 24h
-	}
-
-	// Sign with RS256 (RSA + SHA256)
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	return token.SignedString(privateKey)
-}
-
-// insert if new, update if exists - UUID
-func upsertUser(db *pgxpool.Pool, googleID, email, name string) (string, error) {
-	var userID string
-	err := db.QueryRow(context.Background(),
-		`INSERT INTO users (email, name, google_id, plan_id)
-		 VALUES ($1, $2, $3, (SELECT id FROM plans WHERE name = 'free'))
-		 ON CONFLICT (google_id) DO UPDATE SET email = EXCLUDED.email
-		 RETURNING id`,
-		email, name, googleID,
-	).Scan(&userID)
-	return userID, err
 }
