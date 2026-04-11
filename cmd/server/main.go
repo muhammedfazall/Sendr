@@ -1,15 +1,15 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-	"github.com/go-chi/chi/v5"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/muhammedfazall/Sendr/internal/apikey"
-	"github.com/muhammedfazall/Sendr/internal/auth"
-	"github.com/muhammedfazall/Sendr/internal/middleware"
+	"github.com/muhammedfazall/Sendr/internal/router"
 	"github.com/muhammedfazall/Sendr/pkg/config"
 	"github.com/muhammedfazall/Sendr/pkg/db"
 )
@@ -22,33 +22,37 @@ func main() {
 
 	pool, err := db.Connect(cfg.DBUrl)
 	if err != nil {
-		log.Fatal("failed to connect to db:", err)
+		log.Fatal("failed to connect to database:", err)
 	}
 	defer pool.Close()
-	log.Println("DB connected")
+	log.Println("Database connected")
 
-	r := chi.NewRouter()
+	rdb, err := db.ConnectRedis(cfg.RedisUrl)
+	if err != nil {
+		log.Fatal("failed to connect to redis:", err)
+	}
+	defer rdb.Close()
+	log.Println("Redis connected")
 
-	// Global middleware — applies to every route
-	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.Logger)
-	r.Use(chimiddleware.Recoverer)
+	srv := &http.Server{
+		Addr:    ":" + cfg.Port,
+		Handler: router.New(cfg, pool, rdb),
+	}
 
-	// Public routes — no auth needed
-	r.Get("/auth/google", auth.GoogleLogin(cfg))
-	r.Get("/auth/google/callback", auth.GoogleCallback(cfg, pool))
+	go func() {
+		log.Println("Server starting on :" + cfg.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("server error:", err)
+		}
+	}()
 
-	// Protected routes — JWT required
-	r.With(middleware.JWTAuth(cfg.JWTPublicKeyPath)).Get("/me", func(w http.ResponseWriter, r *http.Request) {
-		claims := r.Context().Value(middleware.UserClaimsKey)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(claims)
-	})
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
 
-	r.With(middleware.JWTAuth(cfg.JWTPublicKeyPath)).Post("/apikeys",apikey.Create(pool))
-	r.With(middleware.JWTAuth(cfg.JWTPublicKeyPath)).Get("/apikeys",apikey.List(pool))
-	r.With(middleware.JWTAuth(cfg.JWTPublicKeyPath)).Delete("/apikeys/{id}",apikey.Revoke(pool))
-
-	log.Println("Server starting on:" + cfg.Port)
-	http.ListenAndServe(":"+cfg.Port, r)
+	log.Println("Shutting down...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	srv.Shutdown(ctx)
+	log.Println("Server stopped cleanly")
 }
