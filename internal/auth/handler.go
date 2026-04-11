@@ -3,13 +3,13 @@ package auth
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/muhammedfazall/Sendr/pkg/config"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -56,28 +56,14 @@ type googleUser struct {
 }
 
 // GoogleCallback handles the redirect back from Google
-func GoogleCallback(cfg *config.Config) http.HandlerFunc {
+func GoogleCallback(cfg *config.Config, db *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Step 1 — verify state matches what we set in the cookie
 		cookie, err := r.Cookie("oauth_state")
 
 		stateParam := r.URL.Query().Get("state")
 
-		// log.Printf("cookie state: %v, url state: %v, err: %v",
-		// 	func() string {
-		// 		if err == nil {
-		// 			return cookie.Value
-		// 		}
-		// 		return "NO COOKIE"
-		// 	}(),
-		// 	stateParam, err)
-
 		if err != nil || cookie.Value != stateParam {
-			http.Error(w, "invalid state", http.StatusBadRequest)
-			return
-		}
-
-		if err != nil || cookie.Value != r.URL.Query().Get("state") {
 			http.Error(w, "invalid state", http.StatusBadRequest)
 			return
 		}
@@ -106,9 +92,15 @@ func GoogleCallback(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 
-		// Step 5 — sign a JWT and return it
-		// (we'll add DB upsert here in a moment)
-		jwtToken, err := signJWT(cfg, gUser.ID, gUser.Email)
+		// Step 5 — upsert user in DB and get their UUID
+		userID, err := upsertUser(db, gUser.ID, gUser.Email, gUser.Name)
+		if err != nil {
+			http.Error(w, "failed to save user", http.StatusInternalServerError)
+			return
+		}
+
+		// Step 6 — sign JWT with the real UUID (not Google ID)
+		jwtToken, err := signJWT(cfg, userID, gUser.Email)
 		if err != nil {
 			http.Error(w, "failed to sign token", http.StatusInternalServerError)
 			return
@@ -142,4 +134,17 @@ func signJWT(cfg *config.Config, userID, email string) (string, error) {
 	// Sign with RS256 (RSA + SHA256)
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	return token.SignedString(privateKey)
+}
+
+// insert if new, update if exists - UUID
+func upsertUser(db *pgxpool.Pool, googleID, email, name string) (string, error) {
+	var userID string
+	err := db.QueryRow(context.Background(),
+		`INSERT INTO users (email, name, google_id, plan_id)
+		 VALUES ($1, $2, $3, (SELECT id FROM plans WHERE name = 'free'))
+		 ON CONFLICT (google_id) DO UPDATE SET email = EXCLUDED.email
+		 RETURNING id`,
+		email, name, googleID,
+	).Scan(&userID)
+	return userID, err
 }
