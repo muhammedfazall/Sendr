@@ -1,4 +1,4 @@
-package email
+package types
 
 import (
 	"encoding/json"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/muhammedfazall/Sendr/internal/job"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
+	"github.com/muhammedfazall/Sendr/internal/types"
 )
 
 type Handler struct {
@@ -26,7 +27,7 @@ func (h *Handler) Send() http.HandlerFunc {
 
 		userID := claims["user_id"].(string)
 
-		var body email.EmailPayload
+		var body types.EmailPayload
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid body", http.StatusBadRequest)
 			return
