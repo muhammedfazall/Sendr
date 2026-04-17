@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/muhammedfazall/Sendr/internal/job"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
-	"github.com/muhammedfazall/Sendr/internal/types"
+	"github.com/muhammedfazall/Sendr/internal/module/job"
+	"github.com/muhammedfazall/Sendr/internal/module/types"
 )
 
 type Handler struct {

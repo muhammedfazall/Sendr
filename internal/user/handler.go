@@ -1,4 +1,4 @@
-package me
+package user
 
 import (
 	"encoding/json"

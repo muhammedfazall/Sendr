@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/muhammedfazall/Sendr/pkg/hash"
+	"github.com/muhammedfazall/Sendr/pkg/helpers/hash"
 )
 
 // Service contains the business logic for API key management.

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/muhammedfazall/Sendr/internal/types"
+	"github.com/muhammedfazall/Sendr/internal/module/types"
 )
 
 type Service struct {

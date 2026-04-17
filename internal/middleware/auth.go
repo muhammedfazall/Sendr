@@ -9,7 +9,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/muhammedfazall/Sendr/pkg/hash"
+	"github.com/muhammedfazall/Sendr/pkg/helpers/hash"
 )
 
 // contextKey is a custom type to avoid key collisions in context
