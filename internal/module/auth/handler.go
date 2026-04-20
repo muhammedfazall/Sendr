@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/muhammedfazall/Sendr/pkg/constants"
 )
 
 // Handler handles HTTP requests for authentication.
@@ -27,7 +28,7 @@ func (h *Handler) GoogleLogin() http.HandlerFunc {
 		http.SetCookie(w, &http.Cookie{
 			Name:     "oauth_state",
 			Value:    state,
-			MaxAge:   300, // expires in 5 minutes
+			MaxAge:   int(constants.OAuthStateCookieTTL.Seconds()),
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
 			Path:     "/",
