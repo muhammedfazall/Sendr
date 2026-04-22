@@ -1,9 +1,9 @@
 package constants
 
-import "time"
+// import "time"
 
-const (
-	JobLockDuration = 5 * time.Minute
-	JobBatchSize    = 10
-	JobMaxRetries   = 3
-)
+// const (
+// 	JobLockDuration = 5 * time.Minute
+// 	JobBatchSize    = 10
+// 	JobMaxRetries   = 3
+// )

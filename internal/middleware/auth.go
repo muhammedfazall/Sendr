@@ -9,7 +9,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/muhammedfazall/Sendr/pkg/helpers/hash"
+	"github.com/muhammedfazall/Sendr/pkg/helpers"
 )
 
 // contextKey is a custom type to avoid key collisions in context
@@ -100,7 +100,7 @@ func ValidateAPIKey(db *pgxpool.Pool) func(http.Handler) http.Handler {
 			}
 
 			// Hash the incoming secret and compare — constant time to prevent timing attacks
-			incomingHash := hash.HashSecret(secret)
+			incomingHash := helpers.HashSecret(secret)
 			if subtle.ConstantTimeCompare([]byte(incomingHash), []byte(storedHash)) != 1 {
 				http.Error(w, "invalid api key", http.StatusUnauthorized)
 				return

@@ -13,7 +13,9 @@ type Config struct {
 	JWTPublicKeyPath   string
 	GoogleClientID     string
 	GoogleClientSecret string
-	SendGridKey         string
+	SendGridKey        string
+	FromEmail          string // e.g. noreply@yourdomain.com
+	FromName           string // e.g. Sendr
 	Port               string
 }
 
@@ -21,19 +23,21 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	return &Config{
-        DBUrl:              os.Getenv("DB_URL"),
-        RedisUrl:           os.Getenv("REDIS_URL"),
-        JWTPrivateKeyPath:  os.Getenv("JWT_PRIVATE_KEY_PATH"),
-        JWTPublicKeyPath:   os.Getenv("JWT_PUBLIC_KEY_PATH"),
-        GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
-        GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
-        SendGridKey:        os.Getenv("SENDGRID_KEY"),
-        Port:               getEnvOrDefault("PORT", "8080"),
-    }, nil
+		DBUrl:              os.Getenv("DB_URL"),
+		RedisUrl:           os.Getenv("REDIS_URL"),
+		JWTPrivateKeyPath:  os.Getenv("JWT_PRIVATE_KEY_PATH"),
+		JWTPublicKeyPath:   os.Getenv("JWT_PUBLIC_KEY_PATH"),
+		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		SendGridKey:        os.Getenv("SENDGRID_KEY"),
+		FromEmail:          getEnvOrDefault("FROM_EMAIL", "noreply@example.com"),
+		FromName:           getEnvOrDefault("FROM_NAME", "Sendr"),
+		Port:               getEnvOrDefault("PORT", "8080"),
+	}, nil
 }
 
 func getEnvOrDefault(key, fallback string) string {
-	if v := os.Getenv(key) ; v != "" {
+	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback

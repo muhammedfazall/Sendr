@@ -9,7 +9,7 @@ import (
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
 	"github.com/muhammedfazall/Sendr/pkg/constants"
-	"github.com/muhammedfazall/Sendr/pkg/helpers/hash"
+	helper "github.com/muhammedfazall/Sendr/pkg/helpers"
 )
 
 type apiKeyService struct {
@@ -21,7 +21,7 @@ func NewApiKeyServices(keys ports.APIKeyRepository) ports.APIKeyService {
 }
 
 func (s *apiKeyService) Create(ctx context.Context, userID, name string) (string, *domain.APIKey, error) {
-	k, err := hash.GenerateAPIKey()
+	k, err := helper.GenerateAPIKey()
 	if err != nil {
 		return "", nil, fmt.Errorf("generate Key: %w", err)
 	}
@@ -59,7 +59,7 @@ func (s *apiKeyService) Validate(ctx context.Context, fullKey string) (*domain.A
 		return nil, constants.ErrAPIKeyRevoked
 	}
 
-	incoming := hash.HashSecret(secret)
+	incoming := helper.HashSecret(secret)
 	if subtle.ConstantTimeCompare([]byte(incoming), []byte(rec.Hashed)) != 1 {
 		return nil, constants.ErrAPIKeyInvalid
 	}

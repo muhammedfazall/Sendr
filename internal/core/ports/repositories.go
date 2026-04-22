@@ -2,20 +2,21 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 )
 
 // UserRepository defines persistence operations for users.
 type UserRepository interface {
-	Upsert(ctc context.Context, googleID, email, name string ) (*domain.User, error)
-	FindByID(ctc context.Context, id string ) (*domain.User, error)
-	FindWithPlan(ctc context.Context, id string ) (*domain.User, *domain.Plan, error)
+	Upsert(ctx context.Context, googleID, email, name string) (*domain.User, error)
+	FindByID(ctx context.Context, id string) (*domain.User, error)
+	FindWithPlan(ctx context.Context, id string) (*domain.User, *domain.Plan, error)
 }
 
 // APIKeyRepository defines persistence operations for API keys.
 type APIKeyRepository interface {
-	Create(ctc context.Context, userID, name, prefix, hashedKey string) (*domain.APIKey, error)
+	Create(ctx context.Context, userID, name, prefix, hashedKey string) (*domain.APIKey, error)
 	ListByUser(ctx context.Context, userID string) ([]domain.APIKey, error)
 	FindByPrefix(ctx context.Context, prefix string) (*domain.APIKey, error)
 	Revoke(ctx context.Context, keyID, userID string) error
@@ -26,6 +27,9 @@ type JobRepository interface {
 	Enqueue(ctx context.Context, userID, apiKeyID string, payload domain.EmailPayload) (*domain.Job, error)
 	ClaimBatch(ctx context.Context, batchSize int) ([]domain.Job, error)
 	MarkDone(ctx context.Context, jobID string) error
-	MarkFailed(ctx context.Context, jobID, errMsg string) error
+	// MarkFailed resets the job to pending with a delayed run_at for retry backoff.
+	MarkFailed(ctx context.Context, jobID string, backoff time.Duration) error
 	MoveToDLQ(ctx context.Context, job domain.Job, errMsg string) error
+	ReclaimZombies(ctx context.Context) (int64, error)
+	GetByID(ctx context.Context, jobID string) (*domain.Job, error)
 }
