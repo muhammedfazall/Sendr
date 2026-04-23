@@ -1,50 +1,127 @@
 # Sendr
-A email service enabling developers to authenticate, generate API keys and send emails
 
+A developer-facing transactional email API built in Go. Authenticate with Google, generate API keys, and send emails through a queued pipeline with rate limiting and automatic retries.
 
+## Stack
 
-Salman Faris
-18:52
-// Package constant holds status codes and canonical messages used across the
-// backend. Keeping these in one place means handlers/services/tests never
-// re-invent HTTP strings or reach for literal error phrases.
-package constants
+Go · PostgreSQL · Redis · SendGrid · Docker · chi · RS256 JWT
 
-import "net/http"
+## Architecture
 
-// HTTP status aliases — handlers read from constants.StatusXxx instead of
-// pulling in net/http all over the place, so a future swap (e.g. 409 →
-// custom app code) only touches this file.
-const (
-	StatusOK                  = http.StatusOK
-	StatusCreated             = http.StatusCreated
-	StatusBadRequest          = http.StatusBadRequest
-	StatusUnauthorized        = http.StatusUnauthorized
-	StatusForbidden           = http.StatusForbidden
-	StatusNotFound            = http.StatusNotFound
-	StatusConflict            = http.StatusConflict
-	StatusInternalServerError = http.StatusInternalServerError
-	StatusServiceUnavailable  = http.StatusServiceUnavailable
-)
+Clean architecture — domain models, port interfaces, and adapters are fully separated. Core business logic has zero infrastructure imports.
 
-// Canonical messages. Handlers should prefer these over ad-hoc strings so
-// the API surface stays consistent.
-const (
-	MsgOK                 = "OK"
-	MsgCreated            = "Created"
-	MsgInvalidBody        = "Invalid request body"
-	MsgMissingFields      = "Required fields are missing"
-	MsgUnauthorized       = "Authentication required"
-	MsgInvalidCredentials = "Invalid credentials"
-	MsgForbidden          = "You do not have permission to access this resource"
-	MsgNotFound           = "Resource not found"
-	MsgConflict           = "Resource already exists"
-	MsgDBError            = "Database error"
-	MsgInternal           = "Internal server error"
-	MsgOrgInactive        = "Organisation is inactive — contact your administrator"
-	MsgSubscriptionEnded  = "Subscription has ended — please renew to regain access"
-	MsgTenantUnavailable  = "Tenant database is unavailable"
-	MsgTokenIssueFailed   = "Failed to issue token"
-	MsgSuperAdminOnly     = "Super admin access only"
-)
-evw-pxeu-yfe
+```
+internal/
+├── core/
+│   ├── domain/        # models
+│   ├── ports/         # interfaces
+│   └── services/      # business logic
+├── adapters/          # postgres + redis implementations
+├── handlers/          # HTTP layer
+└── worker/            # background job processor
+```
+
+## API
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/health` | — | Liveness check |
+| `GET` | `/auth/google` | — | Start OAuth flow |
+| `GET` | `/auth/google/callback` | — | OAuth callback, returns JWT |
+| `GET` | `/me` | JWT | Profile + plan info |
+| `POST` | `/apikeys` | JWT | Create API key |
+| `GET` | `/apikeys` | JWT | List API keys |
+| `DELETE` | `/apikeys/:id` | JWT | Revoke API key |
+| `POST` | `/emails/send` | API key | Queue an email |
+| `GET` | `/emails/:id` | API key | Poll job status |
+
+## Setup
+
+**Prerequisites:** Go 1.21+, Docker, OpenSSL, `migrate` CLI
+
+```bash
+# 1. Clone and install dependencies
+git clone https://github.com/muhammedfazall/Sendr
+cd Sendr
+go mod download
+
+# 2. Start Postgres + Redis
+docker compose up -d
+
+# 3. Generate RSA key pair
+openssl genrsa -traditional -out private.pem 2048
+openssl rsa -in private.pem -pubout -out public.pem
+
+# 4. Configure environment
+cp .env.example .env
+# fill in values (see below)
+
+# 5. Run migrations
+migrate -path migrations -database "postgres://sendr:secret@localhost:5433/sendr?sslmode=disable" up
+
+# 6. Start server
+go run ./cmd/server
+```
+
+## Environment Variables
+
+```env
+DB_URL=postgres://sendr:secret@localhost:5433/sendr?sslmode=disable
+REDIS_URL=redis://localhost:6379
+
+JWT_PRIVATE_KEY_PATH=./private.pem
+JWT_PUBLIC_KEY_PATH=./public.pem
+
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+SENDGRID_KEY=
+FROM_EMAIL=noreply@yourdomain.com
+FROM_NAME=Sendr
+
+PORT=8080
+```
+
+## Sending an Email
+
+```bash
+# 1. Login → get JWT
+open http://localhost:8080/auth/google
+
+# 2. Create an API key
+curl -X POST http://localhost:8080/apikeys \
+  -H "Authorization: Bearer <jwt>" \
+  -d '{"name":"my-key"}'
+
+# 3. Send an email
+curl -X POST http://localhost:8080/emails/send \
+  -H "Authorization: Bearer mk_live_<prefix>.<secret>" \
+  -H "Content-Type: application/json" \
+  -d '{"to":"user@example.com","subject":"Hello","body":"Hello from Sendr"}'
+# → 202 {"job_id":"...","message":"email queued"}
+
+# 4. Poll status
+curl http://localhost:8080/emails/<job_id> \
+  -H "Authorization: Bearer mk_live_..."
+# → {"status":"sent"}
+```
+
+## How It Works
+
+- **Queueing** — `POST /emails/send` validates the API key, checks the Redis rate limit, and inserts a job into Postgres. Returns `202` immediately.
+- **Worker** — polls every 2s, claims jobs atomically with `SELECT FOR UPDATE SKIP LOCKED`, delivers via SendGrid.
+- **Retries** — retryable failures (5xx, network) back off at 10s → 60s → 300s. Non-retryable failures (4xx) go straight to the DLQ.
+- **Rate limiting** — fixed daily window per user in Redis, resets at UTC midnight. Returns `X-RateLimit-*` headers on every response.
+- **Zombie recovery** — jobs stuck in `processing` with an expired lock are reclaimed every 60s.
+
+## Plans
+
+| Plan | Daily limit |
+|------|-------------|
+| free | 100 emails |
+| pro | 1,000 emails |
+| max | 10,000 emails |
+
+## License
+
+MIT
