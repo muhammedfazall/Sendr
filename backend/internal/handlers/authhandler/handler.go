@@ -1,7 +1,7 @@
 package authhandler
 
 import (
-	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -10,14 +10,15 @@ import (
 )
 
 type Handler struct {
-	svc ports.AuthService
+	svc         ports.AuthService
+	frontendURL string
 }
 
-func New(svc ports.AuthService) *Handler {
-	return &Handler{svc: svc}
+func New(svc ports.AuthService, frontendURL string) *Handler {
+	return &Handler{svc: svc, frontendURL: frontendURL}
 }
 
-// GET /auth/google — redirect to Google consent screen
+// GET /auth/google
 func (h *Handler) Login() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		state := uuid.NewString()
@@ -33,7 +34,9 @@ func (h *Handler) Login() http.HandlerFunc {
 	}
 }
 
-// GET /auth/google/callback — exchange code, upsert user, return JWT
+// GET /auth/google/callback
+// Redirects to frontend /callback?token=<jwt> on success
+// Redirects to frontend /callback?error=auth_failed on failure
 func (h *Handler) Callback() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("oauth_state")
@@ -44,11 +47,15 @@ func (h *Handler) Callback() http.HandlerFunc {
 
 		token, err := h.svc.HandleCallback(r.Context(), r.URL.Query().Get("code"))
 		if err != nil {
-			response.Error(w, http.StatusInternalServerError, "auth_failed", err.Error())
+			fmt.Println("CALLBACK ERROR:", err)
+			http.Redirect(w, r,
+				fmt.Sprintf("%s/callback?error=auth_failed", h.frontendURL),
+				http.StatusTemporaryRedirect)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"token": token})
+		http.Redirect(w, r,
+			fmt.Sprintf("%s/callback?token=%s", h.frontendURL, token),
+			http.StatusTemporaryRedirect)
 	}
 }
