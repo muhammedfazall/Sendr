@@ -26,7 +26,11 @@ func (h *Handler) Create() http.HandlerFunc {
 			response.Error(w, http.StatusUnauthorized, "unauthorized", "missing or invalid token")
 			return
 		}
-		userID := claims["user_id"].(string)
+		userID, ok := claims["user_id"].(string)
+		if !ok {
+			response.Error(w, http.StatusNotFound, "notfound", "not found")
+			return
+		}
 
 		var body struct {
 			Name string `json:"name"`

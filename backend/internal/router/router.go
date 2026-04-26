@@ -6,8 +6,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
-
 	"github.com/muhammedfazall/Sendr/internal/adapters/apikeyrepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/jobrepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/ratelimit"
@@ -20,6 +18,7 @@ import (
 	"github.com/muhammedfazall/Sendr/internal/health"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
 	"github.com/muhammedfazall/Sendr/pkg/config"
+	"github.com/redis/go-redis/v9"
 )
 
 func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
@@ -33,20 +32,20 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 
 	// Adapters
 	userRepo := userrepo.New(pool)
-	keyRepo  := apikeyrepo.New(pool)
-	jobRepo  := jobrepo.New(pool)
-	limiter  := ratelimit.New(rdb)
+	keyRepo := apikeyrepo.New(pool)
+	jobRepo := jobrepo.New(pool)
+	limiter := ratelimit.New(rdb)
 
 	// Core services
-	authSvc   := services.NewAuthService(userRepo, cfg)
+	authSvc := services.NewAuthService(userRepo, cfg)
 	apiKeySvc := services.NewApiKeyServices(keyRepo)
-	emailSvc  := services.NewEmailService(apiKeySvc, jobRepo, userRepo, limiter)
+	emailSvc := services.NewEmailService(apiKeySvc, jobRepo, userRepo, limiter)
 
 	// Handlers
-	authH   := authhandler.New(authSvc, cfg.FrontendURL)
+	authH := authhandler.New(authSvc, cfg.FrontendURL)
 	apikeyH := apikeyhandler.New(apiKeySvc)
-	emailH  := emailhandler.New(emailSvc, jobRepo)
-	meH     := mehandler.New(userRepo)
+	emailH := emailhandler.New(emailSvc, jobRepo)
+	meH := mehandler.New(userRepo)
 	healthH := health.NewHandler(health.NewService(pool, rdb))
 
 	// Routes
