@@ -14,8 +14,9 @@ type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 	SendGridKey        string
-	FromEmail          string // e.g. noreply@yourdomain.com
-	FromName           string // e.g. Sendr
+	FromEmail          string
+	FromName           string
+	FrontendURL        string
 	Port               string
 }
 
@@ -32,6 +33,7 @@ func Load() (*Config, error) {
 		SendGridKey:        os.Getenv("SENDGRID_KEY"),
 		FromEmail:          getEnvOrDefault("FROM_EMAIL", "noreply@example.com"),
 		FromName:           getEnvOrDefault("FROM_NAME", "Sendr"),
+		FrontendURL:        getEnvOrDefault("FRONTEND_URL", "http://localhost:5173"),
 		Port:               getEnvOrDefault("PORT", "8080"),
 	}, nil
 }

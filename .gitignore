@@ -1,5 +1,5 @@
-.env
-private.pem
-public.pem
-*.exe
-/tmp
+backend/.env
+backend/private.pem
+backend/public.pem
+issues.md
+analysisreport.md

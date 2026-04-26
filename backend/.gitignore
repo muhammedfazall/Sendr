@@ -1,0 +1,5 @@
+.env
+private.pem
+public.pem
+*.exe
+/tmp
