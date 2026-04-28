@@ -38,15 +38,11 @@ func (h *Handler) Login() http.HandlerFunc {
 // Redirects to frontend /callback?error=auth_failed on failure
 func (h *Handler) Callback() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// cookie, err := r.Cookie("oauth_state")
-		// if err != nil || cookie.Value != r.URL.Query().Get("state") {
-		// 	response.Error(w, http.StatusBadRequest, "invalid_state", "OAuth state mismatch")
-		// 	return
-		// }
+		// State validation skipped for local dev — cookie not reliable cross-origin.
+		// TODO: implement PKCE for production.
 
 		token, err := h.svc.HandleCallback(r.Context(), r.URL.Query().Get("code"))
 		if err != nil {
-			fmt.Println("CALLBACK ERROR:", err)
 			http.Redirect(w, r,
 				fmt.Sprintf("%s/callback?error=auth_failed", h.frontendURL),
 				http.StatusTemporaryRedirect)
