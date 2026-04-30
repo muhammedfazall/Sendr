@@ -1,17 +1,23 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState } from 'react'
+import { api } from './api'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('token'))
+  const [token, setToken] = useState(() => sessionStorage.getItem('token'))
 
   const login = (t) => {
-    localStorage.setItem('token', t)
+    sessionStorage.setItem('token', t)
     setToken(t)
   }
 
-  const logout = () => {
-    localStorage.removeItem('token')
+  const logout = async () => {
+    try {
+      await api.logout() // DELETE refresh token from Redis
+    } catch {
+      // Even if the API call fails, clear local state
+    }
+    sessionStorage.removeItem('token')
     setToken(null)
   }
 

@@ -165,3 +165,47 @@ func (r *PostgresJobRepository) GetByID(ctx context.Context, jobID string) (*dom
 	}
 	return &j, nil
 }
+
+// ListByUser returns jobs for a user, optionally filtered by status.
+// status="" returns all statuses. Results are ordered newest first.
+func (r *PostgresJobRepository) ListByUser(ctx context.Context, userID, status string, limit, offset int) ([]domain.Job, error) {
+	query := `
+		SELECT id, status, retries, max_retries, run_at, created_at, updated_at
+		FROM jobs
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3`
+	args := []any{userID, limit, offset}
+
+	if status != "" {
+		query = `
+		SELECT id, status, retries, max_retries, run_at, created_at, updated_at
+		FROM jobs
+		WHERE user_id = $1 AND status = $2
+		ORDER BY created_at DESC
+		LIMIT $3 OFFSET $4`
+		args = []any{userID, status, limit, offset}
+	}
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+	defer rows.Close()
+
+	var jobs []domain.Job
+	for rows.Next() {
+		var j domain.Job
+		j.UserID = userID
+		if err := rows.Scan(&j.ID, &j.Status, &j.Retries, &j.MaxRetries,
+			&j.RunAt, &j.CreatedAt, &j.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan job: %w", err)
+		}
+		jobs = append(jobs, j)
+	}
+	if jobs == nil {
+		jobs = []domain.Job{}
+	}
+	return jobs, rows.Err()
+}
+

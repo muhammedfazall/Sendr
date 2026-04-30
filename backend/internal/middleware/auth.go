@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"crypto/subtle"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -18,6 +19,15 @@ type contextKey string
 const UserClaimsKey contextKey = "userClaims"
 
 func JWTAuth(publicKeyPath string) func(http.Handler) http.Handler {
+	keyBytes, err := os.ReadFile(publicKeyPath)
+	if err != nil {
+		log.Fatalf("cannot read JWT public key: %v", err)
+	}
+	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyBytes)
+	if err != nil {
+		log.Fatalf("cannot parse JWT public key: %v", err)
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Step 1 — get the Authorization header
@@ -30,26 +40,13 @@ func JWTAuth(publicKeyPath string) func(http.Handler) http.Handler {
 			// Step 2 — extract the token string
 			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 
-			// Step 3 — load public key and verify the token
-			keyBytes, err := os.ReadFile(publicKeyPath)
-			if err != nil {
-				http.Error(w, "server error", http.StatusInternalServerError)
-				return
-			}
-
-			publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyBytes)
-			if err != nil {
-				http.Error(w, "server error", http.StatusInternalServerError)
-				return
-			}
-
 			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 				// Make sure the signing method is RSA — reject anything else
 				if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
 					return nil, jwt.ErrSignatureInvalid
 				}
 				return publicKey, nil
-			})
+			}, jwt.WithAudience("sendr-api"), jwt.WithIssuer("sendr"))
 
 			if err != nil || !token.Valid {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
@@ -106,10 +103,10 @@ func ValidateAPIKey(db *pgxpool.Pool) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Inject user_id into context
-			ctx := context.WithValue(r.Context(), UserClaimsKey, map[string]interface{}{
+			ctx := context.WithValue(r.Context(), UserClaimsKey, jwt.MapClaims{
 				"user_id": userID,
 			})
+
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

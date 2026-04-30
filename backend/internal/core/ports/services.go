@@ -6,10 +6,15 @@ import (
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 )
 
-// AuthService handles Google OAuth and JWT issuance.
+// AuthService handles Google OAuth, JWT issuance, and refresh tokens.
 type AuthService interface {
 	GetAuthURL(state string) string
-	HandleCallback(ctx context.Context, code string) (token string, err error)
+	// HandleCallback exchanges the OAuth code for an access token + refresh token.
+	HandleCallback(ctx context.Context, code string) (accessToken, refreshToken string, err error)
+	// RefreshToken validates the refresh token and issues a new access + refresh token pair.
+	RefreshToken(ctx context.Context, userID, refreshTokenID string) (newAccess, newRefresh string, err error)
+	// Logout deletes the user's refresh token from the store.
+	Logout(ctx context.Context, userID string) error
 }
 
 // APIKeyService handles key generation, listing, and validation.

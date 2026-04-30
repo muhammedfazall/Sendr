@@ -22,6 +22,13 @@ type APIKeyRepository interface {
 	Revoke(ctx context.Context, keyID, userID string) error
 }
 
+// TokenStore defines persistence for refresh tokens (backed by Redis).
+type TokenStore interface {
+	Store(ctx context.Context, userID, tokenID string, ttl time.Duration) error
+	Validate(ctx context.Context, userID, tokenID string) (bool, error)
+	Delete(ctx context.Context, userID string) error
+}
+
 // JobRepository defines persistence operations for the job queue.
 type JobRepository interface {
 	Enqueue(ctx context.Context, userID, apiKeyID string, payload domain.EmailPayload) (*domain.Job, error)
@@ -32,4 +39,5 @@ type JobRepository interface {
 	MoveToDLQ(ctx context.Context, job domain.Job, errMsg string) error
 	ReclaimZombies(ctx context.Context) (int64, error)
 	GetByID(ctx context.Context, jobID string) (*domain.Job, error)
+	ListByUser(ctx context.Context, userID, status string, limit, offset int) ([]domain.Job, error)
 }

@@ -24,7 +24,11 @@ func (h *Handler) Get() http.HandlerFunc {
 			response.Error(w, http.StatusUnauthorized, "unauthorized", "missing or invalid token")
 			return
 		}
-		userID := claims["user_id"].(string)
+		userID, ok := claims["user_id"].(string)
+		if !ok || userID == "" {
+			response.Error(w, http.StatusUnauthorized, "unauthorized", "invalid token claims")
+			return
+		}
 
 		user, plan, err := h.users.FindWithPlan(r.Context(), userID)
 		if err != nil {

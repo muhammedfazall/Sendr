@@ -2,9 +2,11 @@ package apikeyhandler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
 	"github.com/muhammedfazall/Sendr/pkg/response"
@@ -67,7 +69,8 @@ func (h *Handler) List() http.HandlerFunc {
 
 		keys, err := h.svc.List(r.Context(), userID)
 		if err != nil {
-			response.Error(w, http.StatusInternalServerError, "list_failed", err.Error())
+			log.Printf("create api key failed: %v", err) // log internally
+			response.Error(w, http.StatusInternalServerError, "create_failed", "could not create API key")
 			return
 		}
 
@@ -94,8 +97,14 @@ func (h *Handler) Revoke() http.HandlerFunc {
 			response.Error(w, http.StatusUnauthorized, "unauthorized", "missing or invalid token")
 			return
 		}
-		userID := claims["user_id"].(string)
-		keyID := r.PathValue("id")
+
+		userID, ok := claims["user_id"].(string)
+		if !ok || userID == "" {
+			response.Error(w, http.StatusUnauthorized, "unauthorized", "invalid token claims")
+			return
+		}
+
+		keyID := chi.URLParam(r, "id")
 
 		if err := h.svc.Revoke(r.Context(), keyID, userID); err != nil {
 			response.Error(w, http.StatusNotFound, "not_found", "key not found or already revoked")
