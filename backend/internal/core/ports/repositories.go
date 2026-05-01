@@ -27,6 +27,8 @@ type TokenStore interface {
 	Store(ctx context.Context, userID, tokenID string, ttl time.Duration) error
 	Validate(ctx context.Context, userID, tokenID string) (bool, error)
 	Delete(ctx context.Context, userID string) error
+	BlacklistAccessToken(ctx context.Context, tokenID string, ttl time.Duration) error
+	IsAccessTokenBlacklisted(ctx context.Context, tokenID string) (bool, error)
 }
 
 // JobRepository defines persistence operations for the job queue.

@@ -1,20 +1,38 @@
-const BASE = import.meta.env.VITE_API_URL
+import { getApiBaseUrl } from './config'
+
+const BASE = getApiBaseUrl()
+
+export class SessionExpiredError extends Error {
+  constructor() {
+    super('Session expired')
+    this.name = 'SessionExpiredError'
+  }
+}
 
 function authHeaders() {
   const token = sessionStorage.getItem('token')
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-// Flag to prevent multiple concurrent refresh attempts
+function getJwtExp(token) {
+  try {
+    const [, payload] = token.split('.')
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+    return JSON.parse(atob(normalized)).exp
+  } catch {
+    return null
+  }
+}
+
+function tokenExpiresSoon(token, skewSeconds = 60) {
+  const exp = getJwtExp(token)
+  return !exp || exp * 1000 - Date.now() < skewSeconds * 1000
+}
+
 let isRefreshing = false
 let refreshPromise = null
 
-/**
- * Attempts to refresh the access token using the HttpOnly refresh_token cookie.
- * Returns the new access token on success, or null on failure.
- */
 async function refreshAccessToken() {
-  // If a refresh is already in progress, wait for it
   if (isRefreshing) return refreshPromise
 
   isRefreshing = true
@@ -22,20 +40,22 @@ async function refreshAccessToken() {
     try {
       const res = await fetch(`${BASE}/auth/refresh`, {
         method: 'POST',
-        credentials: 'include', // sends refresh_token cookie
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          ...authHeaders(), // sends the expired JWT so backend can read user_id
+          ...authHeaders(),
         },
       })
       if (!res.ok) return null
+
       const data = await res.json()
       if (data.token) {
         sessionStorage.setItem('token', data.token)
         return data.token
       }
       return null
-    } catch {
+    } catch (err) {
+      if (import.meta.env.DEV) console.error('Token refresh failed', err)
       return null
     } finally {
       isRefreshing = false
@@ -46,19 +66,42 @@ async function refreshAccessToken() {
   return refreshPromise
 }
 
+async function ensureFreshToken() {
+  const token = sessionStorage.getItem('token')
+  if (!token || !tokenExpiresSoon(token)) return token
+  return refreshAccessToken()
+}
+
+async function parseResponse(res) {
+  if (res.status === 204) return null
+
+  let data = null
+  try {
+    data = await res.json()
+  } catch (err) {
+    if (import.meta.env.DEV) console.error('Failed to parse API response', err)
+  }
+
+  if (!res.ok) {
+    throw new Error(data?.message || `Request failed (${res.status})`)
+  }
+
+  return data
+}
+
 async function request(path, options = {}) {
+  const refreshedToken = await ensureFreshToken()
   const res = await fetch(`${BASE}${path}`, {
     ...options,
-    credentials: 'include', // always send cookies
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(),
+      ...(refreshedToken ? { Authorization: `Bearer ${refreshedToken}` } : {}),
       ...options.headers,
     },
   })
-  if (res.status === 204) return null
 
-  // If 401, try to refresh the token and retry once
   if (res.status === 401 && !options._retried) {
     const newToken = await refreshAccessToken()
     if (newToken) {
@@ -71,15 +114,13 @@ async function request(path, options = {}) {
         },
       })
     }
-    // Refresh failed — clear session and redirect to login
+
     sessionStorage.removeItem('token')
-    window.location.href = '/'
-    throw new Error('Session expired')
+    window.dispatchEvent(new Event('sendr:session-expired'))
+    throw new SessionExpiredError()
   }
 
-  const data = await res.json().catch(() => ({ message: 'Request failed' }))
-  if (!res.ok) throw new Error(data.message || 'Request failed')
-  return data
+  return parseResponse(res)
 }
 
 export const api = {
@@ -102,6 +143,5 @@ export const api = {
     if (status) params.set('status', status)
     return request(`/emails?${params}`)
   },
-  logout: () =>
-    request('/auth/logout', { method: 'POST' }),
+  logout: () => request('/auth/logout', { method: 'POST' }),
 }

@@ -1,9 +1,17 @@
 package authhandler
 
 import (
+	"crypto/hmac"
+	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -14,18 +22,35 @@ import (
 )
 
 type Handler struct {
-	svc         ports.AuthService
-	frontendURL string
+	svc              ports.AuthService
+	frontendURL      string
+	oauthStateSecret string
+	jwtPublicKey     *rsa.PublicKey
 }
 
-func New(svc ports.AuthService, frontendURL string) *Handler {
-	return &Handler{svc: svc, frontendURL: frontendURL}
+func New(svc ports.AuthService, frontendURL, oauthStateSecret, publicKeyPath string) *Handler {
+	keyBytes, err := os.ReadFile(publicKeyPath)
+	if err != nil {
+		log.Fatalf("cannot read JWT public key: %v", err)
+	}
+
+	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyBytes)
+	if err != nil {
+		log.Fatalf("cannot parse JWT public key: %v", err)
+	}
+
+	return &Handler{
+		svc:              svc,
+		frontendURL:      frontendURL,
+		oauthStateSecret: oauthStateSecret,
+		jwtPublicKey:     publicKey,
+	}
 }
 
 // GET /auth/google
 func (h *Handler) Login() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		state := uuid.NewString()
+		state := buildState(h.oauthStateSecret, r.UserAgent())
 		http.SetCookie(w, &http.Cookie{
 			Name:     "oauth_state",
 			Value:    state,
@@ -52,7 +77,8 @@ func (h *Handler) Callback() http.HandlerFunc {
 			return
 		}
 		queryState := r.URL.Query().Get("state")
-		if subtle.ConstantTimeCompare([]byte(stateCookie.Value), []byte(queryState)) != 1 {
+		if subtle.ConstantTimeCompare([]byte(stateCookie.Value), []byte(queryState)) != 1 ||
+			!validateState(h.oauthStateSecret, queryState, r.UserAgent()) {
 			http.Redirect(w, r,
 				fmt.Sprintf("%s/callback?error=invalid_state", h.frontendURL),
 				http.StatusTemporaryRedirect)
@@ -122,7 +148,6 @@ func (h *Handler) Token() http.HandlerFunc {
 }
 
 // POST /auth/refresh — issues a new access + refresh token pair.
-// The refresh token comes from an HttpOnly cookie, NOT from the request body.
 // The JWT (even if expired) is sent via Authorization header to identify the user.
 func (h *Handler) Refresh() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -133,10 +158,8 @@ func (h *Handler) Refresh() http.HandlerFunc {
 			return
 		}
 
-		// Parse the JWT from Authorization header to get user_id.
-		// We use ParseUnverified here because the access token may be expired —
-		// that's the whole point of refresh. We still verify the refresh token against Redis.
-		claims, err := extractExpiredClaims(r)
+		// Verify the JWT signature and stable claims, while allowing expiry for refresh.
+		claims, err := extractExpiredClaims(r, h.jwtPublicKey)
 		if err != nil {
 			response.Error(w, http.StatusUnauthorized, "invalid_token", "cannot read claims from token")
 			return
@@ -190,7 +213,11 @@ func (h *Handler) Logout() http.HandlerFunc {
 			return
 		}
 
-		_ = h.svc.Logout(r.Context(), userID)
+		jti, _ := claims["jti"].(string)
+		if err := h.svc.Logout(r.Context(), userID, jti, accessTokenTTL(claims)); err != nil {
+			response.Error(w, http.StatusInternalServerError, "logout_failed", "could not log out")
+			return
+		}
 
 		// Clear the refresh token cookie
 		http.SetCookie(w, &http.Cookie{
@@ -203,24 +230,79 @@ func (h *Handler) Logout() http.HandlerFunc {
 
 // extractExpiredClaims reads JWT claims without verifying expiry.
 // Used by the refresh endpoint where the access token may already be expired.
-func extractExpiredClaims(r *http.Request) (jwt.MapClaims, error) {
+func extractExpiredClaims(r *http.Request, publicKey *rsa.PublicKey) (jwt.MapClaims, error) {
 	authHeader := r.Header.Get("Authorization")
-	if len(authHeader) < 8 {
+	if !strings.HasPrefix(authHeader, "Bearer ") {
 		return nil, fmt.Errorf("missing authorization header")
 	}
-	tokenStr := authHeader[7:] // strip "Bearer "
 
-	// ParseUnverified skips signature and expiry checks.
-	// This is safe here because the refresh token (validated against Redis)
-	// is what actually proves the user's session is valid.
-	parser := jwt.NewParser()
-	token, _, err := parser.ParseUnverified(tokenStr, jwt.MapClaims{})
+	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+	claims := jwt.MapClaims{}
+
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return publicKey, nil
+	}, jwt.WithoutClaimsValidation())
 	if err != nil {
 		return nil, fmt.Errorf("parse token: %w", err)
 	}
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return nil, fmt.Errorf("invalid claims type")
+	if !token.Valid {
+		return nil, fmt.Errorf("invalid token")
 	}
+	if !hasIssuer(claims, "sendr") || !hasAudience(claims, "sendr-api") {
+		return nil, fmt.Errorf("invalid token claims")
+	}
+
 	return claims, nil
+}
+
+func buildState(secret, userAgent string) string {
+	nonce := uuid.NewString()
+	return nonce + "." + signState(secret, nonce, userAgent)
+}
+
+func validateState(secret, state, userAgent string) bool {
+	parts := strings.SplitN(state, ".", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	expected := signState(secret, parts[0], userAgent)
+	return subtle.ConstantTimeCompare([]byte(parts[1]), []byte(expected)) == 1
+}
+
+func signState(secret, nonce, userAgent string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(nonce))
+	mac.Write([]byte("|"))
+	mac.Write([]byte(userAgent))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func accessTokenTTL(claims jwt.MapClaims) time.Duration {
+	exp, ok := claims["exp"].(float64)
+	if !ok {
+		return 0
+	}
+	return time.Until(time.Unix(int64(exp), 0))
+}
+
+func hasIssuer(claims jwt.MapClaims, issuer string) bool {
+	v, ok := claims["iss"].(string)
+	return ok && v == issuer
+}
+
+func hasAudience(claims jwt.MapClaims, audience string) bool {
+	switch aud := claims["aud"].(type) {
+	case string:
+		return aud == audience
+	case []any:
+		for _, item := range aud {
+			if s, ok := item.(string); ok && s == audience {
+				return true
+			}
+		}
+	}
+	return false
 }

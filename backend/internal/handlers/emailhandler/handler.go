@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/mail"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,11 @@ import (
 	"github.com/muhammedfazall/Sendr/internal/middleware"
 	"github.com/muhammedfazall/Sendr/pkg/constants"
 	"github.com/muhammedfazall/Sendr/pkg/response"
+)
+
+const (
+	maxSubjectLength = 998
+	maxBodyLength    = 50_000
 )
 
 // Handler handles POST /emails/send and GET /emails/:id.
@@ -52,12 +58,25 @@ func (h *Handler) Send() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, "missing_fields", "to, subject and body are required")
 			return
 		}
+		payload.Subject = strings.TrimSpace(payload.Subject)
+		if payload.Subject == "" {
+			response.Error(w, http.StatusBadRequest, "missing_fields", "subject is required")
+			return
+		}
+		if len(payload.Subject) > maxSubjectLength {
+			response.Error(w, http.StatusBadRequest, "subject_too_large", "subject must be under 998 characters")
+			return
+		}
 		if _, err := mail.ParseAddress(payload.To); err != nil {
 			response.Error(w, http.StatusBadRequest, "invalid_email", "to is not a valid email address")
 			return
 		}
-		if len(payload.Body) > 50_000 {
+		if len(payload.Body) > maxBodyLength {
 			response.Error(w, http.StatusBadRequest, "body_too_large", "body must be under 50KB")
+			return
+		}
+		if payload.HTML {
+			response.Error(w, http.StatusBadRequest, "html_not_supported", "HTML email is not supported yet")
 			return
 		}
 

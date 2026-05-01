@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 )
@@ -13,8 +14,8 @@ type AuthService interface {
 	HandleCallback(ctx context.Context, code string) (accessToken, refreshToken string, err error)
 	// RefreshToken validates the refresh token and issues a new access + refresh token pair.
 	RefreshToken(ctx context.Context, userID, refreshTokenID string) (newAccess, newRefresh string, err error)
-	// Logout deletes the user's refresh token from the store.
-	Logout(ctx context.Context, userID string) error
+	// Logout deletes the user's refresh token and blacklists the current access token.
+	Logout(ctx context.Context, userID, accessTokenID string, accessTokenTTL time.Duration) error
 }
 
 // APIKeyService handles key generation, listing, and validation.

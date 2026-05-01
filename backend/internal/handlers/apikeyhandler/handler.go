@@ -44,7 +44,8 @@ func (h *Handler) Create() http.HandlerFunc {
 
 		fullKey, key, err := h.svc.Create(r.Context(), userID, body.Name)
 		if err != nil {
-			response.Error(w, http.StatusInternalServerError, "create_failed", err.Error())
+			log.Printf("create api key failed: %v", err)
+			response.Error(w, http.StatusInternalServerError, "create_failed", "could not create API key")
 			return
 		}
 
@@ -69,8 +70,8 @@ func (h *Handler) List() http.HandlerFunc {
 
 		keys, err := h.svc.List(r.Context(), userID)
 		if err != nil {
-			log.Printf("create api key failed: %v", err) // log internally
-			response.Error(w, http.StatusInternalServerError, "create_failed", "could not create API key")
+			log.Printf("list api keys failed: %v", err)
+			response.Error(w, http.StatusInternalServerError, "list_failed", "could not list API keys")
 			return
 		}
 

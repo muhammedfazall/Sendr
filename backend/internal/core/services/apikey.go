@@ -12,6 +12,8 @@ import (
 	helper "github.com/muhammedfazall/Sendr/pkg/helpers"
 )
 
+const maxAPIKeyCreateAttempts = 3
+
 type apiKeyService struct {
 	keys ports.APIKeyRepository
 }
@@ -21,15 +23,20 @@ func NewApiKeyServices(keys ports.APIKeyRepository) ports.APIKeyService {
 }
 
 func (s *apiKeyService) Create(ctx context.Context, userID, name string) (string, *domain.APIKey, error) {
-	k, err := helper.GenerateAPIKey()
-	if err != nil {
-		return "", nil, fmt.Errorf("generate Key: %w", err)
+	for attempt := 0; attempt < maxAPIKeyCreateAttempts; attempt++ {
+		k, err := helper.GenerateAPIKey()
+		if err != nil {
+			return "", nil, fmt.Errorf("generate key: %w", err)
+		}
+		created, err := s.keys.Create(ctx, userID, name, k.Prefix, k.Hashed)
+		if err == nil {
+			return k.Full, created, nil
+		}
+		if !isUniqueConstraintError(err) {
+			return "", nil, fmt.Errorf("persist key: %w", err)
+		}
 	}
-	created, err := s.keys.Create(ctx, userID, name, k.Prefix, k.Hashed)
-	if err != nil {
-		return "", nil, fmt.Errorf("persist key: %w", err)
-	}
-	return k.Full, created, nil
+	return "", nil, fmt.Errorf("generate unique api key prefix")
 }
 
 func (s *apiKeyService) List(ctx context.Context, userID string) ([]domain.APIKey, error) {
@@ -64,4 +71,9 @@ func (s *apiKeyService) Validate(ctx context.Context, fullKey string) (*domain.A
 		return nil, constants.ErrAPIKeyInvalid
 	}
 	return rec, nil
+}
+
+func isUniqueConstraintError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "SQLSTATE 23505") || strings.Contains(strings.ToLower(msg), "duplicate key")
 }

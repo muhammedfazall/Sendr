@@ -3,3 +3,5 @@ backend/.env
 backend/private.pem
 backend/public.pem
 CODE_REVIEW.md
+FIX_GUIDE.md
+BACKEND_FIXES.md

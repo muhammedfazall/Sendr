@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../lib/auth'
+import { useAuth } from '../lib/auth-context'
+import { getApiBaseUrl } from '../lib/config'
+
+const API = getApiBaseUrl()
 
 export default function Callback() {
   const { login } = useAuth()
@@ -19,7 +22,12 @@ export default function Callback() {
       return
     }
 
-    fetch(`${import.meta.env.VITE_API_URL}/auth/token`, { credentials: 'include' })
+    const controller = new AbortController()
+
+    fetch(`${API}/auth/token`, {
+      credentials: 'include',
+      signal: controller.signal,
+    })
       .then(r => r.json())
       .then(data => {
         if (data.token) {
@@ -29,9 +37,12 @@ export default function Callback() {
           navigate('/?error=auth_failed', { replace: true })
         }
       })
-      .catch(() => navigate('/?error=auth_failed', { replace: true }))
-  }, [])
+      .catch((err) => {
+        if (err.name !== 'AbortError') navigate('/?error=auth_failed', { replace: true })
+      })
 
+    return () => controller.abort()
+  }, [login, navigate])
 
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>

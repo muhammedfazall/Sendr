@@ -103,9 +103,15 @@ func (s *authService) RefreshToken(ctx context.Context, userID, refreshTokenID s
 	return s.issueTokenPair(ctx, user.ID, user.Email)
 }
 
-// Logout deletes the refresh token from Redis.
-func (s *authService) Logout(ctx context.Context, userID string) error {
-	return s.tokens.Delete(ctx, userID)
+// Logout deletes the refresh token from Redis and blacklists the current access token.
+func (s *authService) Logout(ctx context.Context, userID, accessTokenID string, accessTokenTTL time.Duration) error {
+	if err := s.tokens.Delete(ctx, userID); err != nil {
+		return fmt.Errorf("delete refresh token: %w", err)
+	}
+	if err := s.tokens.BlacklistAccessToken(ctx, accessTokenID, accessTokenTTL); err != nil {
+		return fmt.Errorf("blacklist access token: %w", err)
+	}
+	return nil
 }
 
 // issueTokenPair creates a new access JWT + refresh token and stores the
@@ -128,6 +134,7 @@ func (s *authService) signJWT(userID, email string) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"user_id": userID,
 		"email":   email,
+		"jti":     uuid.NewString(),
 		"iss":     "sendr",
 		"aud":     "sendr-api",
 		"iat":     time.Now().Unix(),

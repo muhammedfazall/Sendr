@@ -1,4 +1,6 @@
-const API = import.meta.env.VITE_API_URL
+import { getApiBaseUrl } from '../lib/config'
+
+const API = getApiBaseUrl()
 
 export default function Login() {
   return (

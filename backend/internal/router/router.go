@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -29,7 +30,8 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	r.Use(chimiddleware.Recoverer)
 
 	// CORS — allow requests from the React dev server
-	r.Use(corsMiddleware(cfg.FrontendURL))
+	r.Use(corsMiddleware(cfg.AllowedOrigins))
+	r.Use(maxBodyBytes(1 << 20))
 
 	// Adapters
 	userRepo := userrepo.New(pool)
@@ -44,7 +46,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	emailSvc := services.NewEmailService(apiKeySvc, jobRepo, userRepo, limiter)
 
 	// Handlers
-	authH := authhandler.New(authSvc, cfg.FrontendURL)
+	authH := authhandler.New(authSvc, cfg.FrontendURL, cfg.OAuthStateSecret, cfg.JWTPublicKeyPath)
 	apikeyH := apikeyhandler.New(apiKeySvc)
 	emailH := emailhandler.New(emailSvc, jobRepo)
 	meH := mehandler.New(userRepo)
@@ -63,7 +65,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	})
 
 	// JWT-protected routes
-	jwtMW := middleware.JWTAuth(cfg.JWTPublicKeyPath)
+	jwtMW := middleware.JWTAuth(cfg.JWTPublicKeyPath, tokenStore)
 	r.With(jwtMW).Post("/auth/logout", authH.Logout())
 	r.With(jwtMW).Get("/me", meH.Get())
 	r.With(jwtMW).Post("/apikeys", apikeyH.Create())
@@ -78,18 +80,45 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	return r
 }
 
-// corsMiddleware allows the React dev server to call the API.
-func corsMiddleware(frontendURL string) func(http.Handler) http.Handler {
+func maxBodyBytes(limit int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", frontendURL)
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// corsMiddleware allows the React dev server to call the API.
+func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+
+	for _, origin := range allowedOrigins {
+		u, err := url.Parse(origin)
+		if err != nil || u.Scheme == "" || u.Host == "" || origin == "*" {
+			continue
+		}
+		allowed[origin] = struct{}{}
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+
+			if _, ok := allowed[origin]; ok {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
+
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			if r.Method == "OPTIONS" {
+
+			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
+
 			next.ServeHTTP(w, r)
 		})
 	}
