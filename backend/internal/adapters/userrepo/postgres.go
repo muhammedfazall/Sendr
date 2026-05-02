@@ -17,14 +17,16 @@ func New(db *pgxpool.Pool) *PostgresUserRepository {
 	return &PostgresUserRepository{db: db}
 }
 
-// Upsert inserts a new user or updates their email on google_id conflict.
+// Upsert inserts a new user or updates their profile on google_id conflict.
 // Assigns the 'free' plan on first login.
 func (r *PostgresUserRepository) Upsert(ctx context.Context, googleID, email, name string) (*domain.User, error) {
 	var u domain.User
 	err := r.db.QueryRow(ctx,
 		`INSERT INTO users (email, name, google_id, plan_id)
 		 VALUES ($1, $2, $3, (SELECT id FROM plans WHERE name = 'free'))
-		 ON CONFLICT (google_id) DO UPDATE SET email = EXCLUDED.email
+		 ON CONFLICT (google_id) DO UPDATE SET
+		 	email = EXCLUDED.email,
+		 	name = EXCLUDED.name
 		 RETURNING id, email, name, google_id, plan_id, created_at`,
 		email, name, googleID,
 	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.PlanID, &u.CreatedAt)

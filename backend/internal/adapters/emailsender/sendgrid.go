@@ -24,7 +24,7 @@ func NewSendGrid(apiKey, fromEmail, fromName string) *SendGridSender {
 		apiKey:    apiKey,
 		fromEmail: fromEmail,
 		fromName:  fromName,
-		client:    &http.Client{Timeout: 10 * time.Second},
+		client:    &http.Client{Timeout: 30 * time.Second},
 	}
 }
 

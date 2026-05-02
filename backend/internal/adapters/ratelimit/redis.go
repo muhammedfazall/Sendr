@@ -15,6 +15,22 @@ type RedisRateLimiter struct {
 	rdb *redis.Client
 }
 
+var checkScript = redis.NewScript(`
+local current = redis.call("INCR", KEYS[1])
+if current == 1 then
+  redis.call("EXPIRE", KEYS[1], ARGV[2])
+end
+local limit = tonumber(ARGV[1])
+local remaining = limit - current
+if remaining < 0 then
+  remaining = 0
+end
+if current <= limit then
+  return {1, remaining}
+end
+return {0, remaining}
+`)
+
 func New(rdb *redis.Client) *RedisRateLimiter {
 	return &RedisRateLimiter{rdb: rdb}
 }
@@ -25,21 +41,23 @@ func New(rdb *redis.Client) *RedisRateLimiter {
 func (r *RedisRateLimiter) Check(ctx context.Context, userID string, limit int) (bool, int, error) {
 	key := fmt.Sprintf("rate_limit:%s:%s", userID, time.Now().UTC().Format("2006-01-02"))
 
-	// Pipeline: INCR + EXPIRE in one round-trip.
-	// TTL is 25h so a key created at 23:59 is never evicted before midnight.
-	pipe := r.rdb.Pipeline()
-	incr := pipe.Incr(ctx, key)
-	pipe.Expire(ctx, key, 25*time.Hour)
-
-	if _, err := pipe.Exec(ctx); err != nil {
-		return false, 0, fmt.Errorf("ratelimit pipeline: %w", err)
+	res, err := checkScript.Run(ctx, r.rdb, []string{key}, limit, int((25 * time.Hour).Seconds())).Result()
+	if err != nil {
+		return false, 0, fmt.Errorf("ratelimit script: %w", err)
+	}
+	values, ok := res.([]any)
+	if !ok || len(values) != 2 {
+		return false, 0, fmt.Errorf("ratelimit script returned unexpected result")
 	}
 
-	current := int(incr.Val())
-	remaining := limit - current
-	if remaining < 0 {
-		remaining = 0
+	allowed, ok := values[0].(int64)
+	if !ok {
+		return false, 0, fmt.Errorf("ratelimit script returned invalid allowed value")
+	}
+	remaining, ok := values[1].(int64)
+	if !ok {
+		return false, 0, fmt.Errorf("ratelimit script returned invalid remaining value")
 	}
 
-	return current <= limit, remaining, nil
+	return allowed == 1, int(remaining), nil
 }

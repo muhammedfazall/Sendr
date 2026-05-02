@@ -51,8 +51,11 @@ func main() {
 
 	// ── HTTP server ──────────────────────────────────────────────────────
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: router.New(cfg, pool, rdb),
+		Addr:         ":" + cfg.Port,
+		Handler:      router.New(cfg, pool, rdb),
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {

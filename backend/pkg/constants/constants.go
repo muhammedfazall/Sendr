@@ -9,7 +9,8 @@ import (
 // ── Durations ────────────────────────────────────────────────────────────────
 
 const (
-	JWTExpiry          = 24 * time.Hour
+	JWTExpiry           = 15 * time.Minute
+	RefreshTokenExpiry  = 7 * 24 * time.Hour // 7 days
 	OAuthStateCookieTTL = 5 * time.Minute
 )
 

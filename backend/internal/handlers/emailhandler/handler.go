@@ -4,22 +4,31 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/mail"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/muhammedfazall/Sendr/internal/adapters/jobrepo"
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
+	"github.com/muhammedfazall/Sendr/internal/middleware"
 	"github.com/muhammedfazall/Sendr/pkg/constants"
 	"github.com/muhammedfazall/Sendr/pkg/response"
+)
+
+const (
+	maxSubjectLength = 998
+	maxBodyLength    = 50_000
 )
 
 // Handler handles POST /emails/send and GET /emails/:id.
 // Routes under this handler are protected by the API key middleware,
 // not JWT — callers authenticate with their mk_live_... key.
 type Handler struct {
-	email  ports.EmailService
-	jobDB  *jobrepo.PostgresJobRepository
+	email ports.EmailService
+	jobDB *jobrepo.PostgresJobRepository
 }
 
 func New(email ports.EmailService, jobDB *jobrepo.PostgresJobRepository) *Handler {
@@ -49,14 +58,33 @@ func (h *Handler) Send() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, "missing_fields", "to, subject and body are required")
 			return
 		}
+		payload.Subject = strings.TrimSpace(payload.Subject)
+		if payload.Subject == "" {
+			response.Error(w, http.StatusBadRequest, "missing_fields", "subject is required")
+			return
+		}
+		if len(payload.Subject) > maxSubjectLength {
+			response.Error(w, http.StatusBadRequest, "subject_too_large", "subject must be under 998 characters")
+			return
+		}
+		if _, err := mail.ParseAddress(payload.To); err != nil {
+			response.Error(w, http.StatusBadRequest, "invalid_email", "to is not a valid email address")
+			return
+		}
+		if len(payload.Body) > maxBodyLength {
+			response.Error(w, http.StatusBadRequest, "body_too_large", "body must be under 50KB")
+			return
+		}
+		if payload.HTML {
+			response.Error(w, http.StatusBadRequest, "html_not_supported", "HTML email is not supported yet")
+			return
+		}
 
 		job, err := h.email.Send(r.Context(), fullKey, payload)
 		if err != nil {
 			h.handleSendError(w, err)
 			return
 		}
-
-		w.WriteHeader(http.StatusAccepted)
 		response.JSON(w, http.StatusAccepted, map[string]string{
 			"job_id":  job.ID,
 			"message": "email queued",
@@ -67,7 +95,7 @@ func (h *Handler) Send() http.HandlerFunc {
 // GetJob handles GET /emails/{id} — status polling for async sends.
 func (h *Handler) GetJob() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		jobID := r.PathValue("id")
+		jobID := chi.URLParam(r, "id")
 		if jobID == "" {
 			response.Error(w, http.StatusBadRequest, "missing_id", "job id is required")
 			return
@@ -117,4 +145,51 @@ func nextMidnightUTC() int64 {
 	now := time.Now().UTC()
 	midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
 	return midnight.Unix()
+}
+
+// List handles GET /emails — returns the authenticated user's email history.
+// Protected by JWT. Supports ?status=sent|pending|failed&limit=20&offset=0
+func (h *Handler) List() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := middleware.GetClaims(r)
+		if !ok {
+			response.Error(w, http.StatusUnauthorized, "unauthorized", "missing claims")
+			return
+		}
+		userID, ok := claims["user_id"].(string)
+		if !ok || userID == "" {
+			response.Error(w, http.StatusUnauthorized, "unauthorized", "invalid token claims")
+			return
+		}
+
+		// Parse query params with safe defaults
+		validStatuses := map[string]bool{"pending": true, "processing": true, "sent": true, "failed": true}
+		status := r.URL.Query().Get("status")
+		if status != "" && !validStatuses[status] {
+			response.Error(w, http.StatusBadRequest, "invalid_status", "status must be one of: pending, processing, sent, failed")
+			return
+		}
+
+		limit := 20
+		offset := 0
+
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
+				limit = v
+			}
+		}
+		if o := r.URL.Query().Get("offset"); o != "" {
+			if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+				offset = v
+			}
+		}
+
+		jobs, err := h.jobDB.ListByUser(r.Context(), userID, status, limit, offset)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, "internal_error", "failed to fetch emails")
+			return
+		}
+
+		response.JSON(w, http.StatusOK, jobs)
+	}
 }

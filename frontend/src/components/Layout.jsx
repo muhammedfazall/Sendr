@@ -1,5 +1,6 @@
-import { NavLink, useNavigate } from 'react-router-dom'
-import { useAuth } from '../lib/auth'
+import { useEffect, useRef } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../lib/auth-context'
 
 const nav = [
   { to: '/dashboard', label: 'Dashboard', icon: SquaresIcon },
@@ -10,6 +11,12 @@ const nav = [
 export default function Layout({ children }) {
   const { logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const mainRef = useRef(null)
+
+  useEffect(() => {
+    mainRef.current?.focus()
+  }, [location.pathname])
 
   const handleLogout = () => {
     logout()
@@ -64,7 +71,7 @@ export default function Layout({ children }) {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-auto">
+      <main ref={mainRef} tabIndex={-1} className="flex-1 overflow-auto outline-none">
         {children}
       </main>
     </div>

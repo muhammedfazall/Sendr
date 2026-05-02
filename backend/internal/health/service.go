@@ -37,8 +37,13 @@ func (s *Service) Check(ctx context.Context) HealthStatus {
 		redisStatus = "error"
 	}
 
+	overall := "ok"
+	if dbStatus != "ok" || redisStatus != "ok" {
+		overall = "degraded"
+	}
+
 	return HealthStatus{
-		Status: "ok",
+		Status: overall,
 		DB:     dbStatus,
 		Redis:  redisStatus,
 	}

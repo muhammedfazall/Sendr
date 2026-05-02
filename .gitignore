@@ -1,5 +1,7 @@
+frontend/.env
 backend/.env
 backend/private.pem
 backend/public.pem
-issues.md
-analysisreport.md
+CODE_REVIEW.md
+FIX_GUIDE.md
+BACKEND_FIXES.md

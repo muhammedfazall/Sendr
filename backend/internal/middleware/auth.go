@@ -3,13 +3,16 @@ package middleware
 import (
 	"context"
 	"crypto/subtle"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/muhammedfazall/Sendr/internal/core/ports"
 	"github.com/muhammedfazall/Sendr/pkg/helpers"
+	"github.com/muhammedfazall/Sendr/pkg/response"
 )
 
 // contextKey is a custom type to avoid key collisions in context
@@ -17,31 +20,27 @@ type contextKey string
 
 const UserClaimsKey contextKey = "userClaims"
 
-func JWTAuth(publicKeyPath string) func(http.Handler) http.Handler {
+func JWTAuth(publicKeyPath string, tokens ports.TokenStore) func(http.Handler) http.Handler {
+	keyBytes, err := os.ReadFile(publicKeyPath)
+	if err != nil {
+		log.Fatalf("cannot read JWT public key: %v", err)
+	}
+	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyBytes)
+	if err != nil {
+		log.Fatalf("cannot parse JWT public key: %v", err)
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Step 1 — get the Authorization header
 			authHeader := r.Header.Get("Authorization")
 			if !strings.HasPrefix(authHeader, "Bearer ") {
-				http.Error(w, "missing token", http.StatusUnauthorized)
+				response.Error(w, http.StatusUnauthorized, "missing_token", "missing token")
 				return
 			}
 
 			// Step 2 — extract the token string
 			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-
-			// Step 3 — load public key and verify the token
-			keyBytes, err := os.ReadFile(publicKeyPath)
-			if err != nil {
-				http.Error(w, "server error", http.StatusInternalServerError)
-				return
-			}
-
-			publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyBytes)
-			if err != nil {
-				http.Error(w, "server error", http.StatusInternalServerError)
-				return
-			}
 
 			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 				// Make sure the signing method is RSA — reject anything else
@@ -49,15 +48,35 @@ func JWTAuth(publicKeyPath string) func(http.Handler) http.Handler {
 					return nil, jwt.ErrSignatureInvalid
 				}
 				return publicKey, nil
-			})
+			}, jwt.WithAudience("sendr-api"), jwt.WithIssuer("sendr"))
 
 			if err != nil || !token.Valid {
-				http.Error(w, "invalid token", http.StatusUnauthorized)
+				response.Error(w, http.StatusUnauthorized, "invalid_token", "invalid token")
 				return
 			}
 
 			// Step 4 — inject claims into request context
-			ctx := context.WithValue(r.Context(), UserClaimsKey, token.Claims)
+			claims, ok := token.Claims.(jwt.MapClaims)
+			if !ok {
+				response.Error(w, http.StatusUnauthorized, "invalid_token", "invalid token")
+				return
+			}
+			jti, ok := claims["jti"].(string)
+			if !ok || jti == "" {
+				response.Error(w, http.StatusUnauthorized, "invalid_token", "invalid token")
+				return
+			}
+			blacklisted, err := tokens.IsAccessTokenBlacklisted(r.Context(), jti)
+			if err != nil {
+				response.Error(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication temporarily unavailable")
+				return
+			}
+			if blacklisted {
+				response.Error(w, http.StatusUnauthorized, "invalid_token", "invalid token")
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), UserClaimsKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -69,7 +88,7 @@ func ValidateAPIKey(db *pgxpool.Pool) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			if !strings.HasPrefix(authHeader, "Bearer ") {
-				http.Error(w, "missing api key", http.StatusUnauthorized)
+				response.Error(w, http.StatusUnauthorized, "missing_api_key", "missing api key")
 				return
 			}
 
@@ -78,7 +97,7 @@ func ValidateAPIKey(db *pgxpool.Pool) func(http.Handler) http.Handler {
 			// Split on "." to get prefix and secret
 			parts := strings.SplitN(fullKey, ".", 2)
 			if len(parts) != 2 {
-				http.Error(w, "invalid api key format", http.StatusUnauthorized)
+				response.Error(w, http.StatusUnauthorized, "invalid_api_key", "invalid api key")
 				return
 			}
 
@@ -89,27 +108,27 @@ func ValidateAPIKey(db *pgxpool.Pool) func(http.Handler) http.Handler {
 			// Look up by prefix
 			var storedHash string
 			var userID string
-			err := db.QueryRow(context.Background(),
+			err := db.QueryRow(r.Context(),
 				`SELECT hashed_key, user_id FROM api_keys
 				 WHERE prefix = $1 AND revoked = false`,
 				prefix,
 			).Scan(&storedHash, &userID)
 			if err != nil {
-				http.Error(w, "invalid api key", http.StatusUnauthorized)
+				response.Error(w, http.StatusUnauthorized, "invalid_api_key", "invalid api key")
 				return
 			}
 
 			// Hash the incoming secret and compare — constant time to prevent timing attacks
 			incomingHash := helpers.HashSecret(secret)
 			if subtle.ConstantTimeCompare([]byte(incomingHash), []byte(storedHash)) != 1 {
-				http.Error(w, "invalid api key", http.StatusUnauthorized)
+				response.Error(w, http.StatusUnauthorized, "invalid_api_key", "invalid api key")
 				return
 			}
 
-			// Inject user_id into context
-			ctx := context.WithValue(r.Context(), UserClaimsKey, map[string]interface{}{
+			ctx := context.WithValue(r.Context(), UserClaimsKey, jwt.MapClaims{
 				"user_id": userID,
 			})
+
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
