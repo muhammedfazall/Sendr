@@ -51,6 +51,7 @@ func New(svc ports.AuthService, frontendURL, oauthStateSecret, publicKeyPath str
 func (h *Handler) Login() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		state := buildState(h.oauthStateSecret, r.UserAgent())
+
 		http.SetCookie(w, &http.Cookie{
 			Name:     "oauth_state",
 			Value:    state,
@@ -60,6 +61,19 @@ func (h *Handler) Login() http.HandlerFunc {
 			SameSite: http.SameSiteLaxMode,
 			Path:     "/",
 		})
+
+		// Store CLI redirect_uri if present
+		if redirectURI := r.URL.Query().Get("redirect_uri"); redirectURI != "" {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "oauth_redirect_uri",
+				Value:    redirectURI,
+				MaxAge:   300,
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+				Path:     "/",
+			})
+		}
+
 		http.Redirect(w, r, h.svc.GetAuthURL(state), http.StatusTemporaryRedirect)
 	}
 }
@@ -106,7 +120,7 @@ func (h *Handler) Callback() http.HandlerFunc {
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
 			Path:     "/",
-			Secure:   true,
+			Secure:   false, // must be false for CLI local HTTP callback to work
 		})
 
 		// Refresh token cookie — lasts 7 days, HttpOnly so JS can't touch it
@@ -117,12 +131,20 @@ func (h *Handler) Callback() http.HandlerFunc {
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
 			Path:     "/auth", // only sent to /auth/* routes
-			Secure:   true,
+			Secure:   false,
 		})
 
-		http.Redirect(w, r,
-			fmt.Sprintf("%s/callback", h.frontendURL),
-			http.StatusTemporaryRedirect)
+		// Redirect to CLI local server if present, otherwise frontend
+		redirectTo := fmt.Sprintf("%s/callback", h.frontendURL)
+		if c, err := r.Cookie("oauth_redirect_uri"); err == nil && c.Value != "" {
+			// Pass token directly in URL for CLI
+			redirectTo = fmt.Sprintf("%s?token=%s", c.Value, accessToken)
+			http.SetCookie(w, &http.Cookie{
+				Name: "oauth_redirect_uri", Value: "", MaxAge: -1, Path: "/",
+			})
+		}
+
+		http.Redirect(w, r, redirectTo, http.StatusTemporaryRedirect)
 	}
 }
 
