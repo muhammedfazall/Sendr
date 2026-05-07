@@ -34,4 +34,6 @@ type EmailService interface {
 // RateLimiter defines the Redis-backed rate-check contract.
 type RateLimiter interface {
 	Check(ctx context.Context, userID string, limit int) (allowed bool, remaining int, err error)
+	// GetCount returns today's usage count for a user without incrementing it.
+	GetCount(ctx context.Context, userID string) (int, error)
 }

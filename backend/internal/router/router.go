@@ -49,7 +49,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	authH := authhandler.New(authSvc, cfg.FrontendURL, cfg.OAuthStateSecret, cfg.JWTPublicKeyPath)
 	apikeyH := apikeyhandler.New(apiKeySvc)
 	emailH := emailhandler.New(emailSvc, jobRepo)
-	meH := mehandler.New(userRepo)
+	meH := mehandler.New(userRepo, limiter)
 	healthH := health.NewHandler(health.NewService(pool, rdb))
 
 	// Routes

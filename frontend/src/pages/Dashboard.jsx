@@ -30,8 +30,9 @@ export default function Dashboard() {
     )
   }
 
-  const pct = 0
-  const remaining = null
+  const usageToday = profile.usage_today ?? 0
+  const remaining = profile.remaining ?? profile.daily_limit
+  const pct = profile.daily_limit > 0 ? Math.min((usageToday / profile.daily_limit) * 100, 100) : 0
   const planColor = { free: '#666', pro: '#00d084', max: '#a78bfa' }[profile.plan] || '#666'
 
   return (
@@ -56,7 +57,7 @@ export default function Dashboard() {
           <div>
             <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--muted)' }}>
               <span>Daily usage</span>
-              <span className="mono">Not available</span>
+              <span className="mono">{usageToday.toLocaleString()} / {profile.daily_limit.toLocaleString()}</span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
               <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: pct > 90 ? 'var(--danger)' : 'var(--accent)' }} />
@@ -67,7 +68,7 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-2 gap-3">
           <Stat label="Plan limit" value={profile.daily_limit.toLocaleString()} unit="emails/day" />
-          <Stat label="Remaining today" value={remaining ?? '-'} unit="emails" />
+          <Stat label="Remaining today" value={remaining.toLocaleString()} unit="emails" />
         </div>
       </div>
     </Layout>

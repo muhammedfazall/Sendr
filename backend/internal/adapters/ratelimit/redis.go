@@ -61,3 +61,17 @@ func (r *RedisRateLimiter) Check(ctx context.Context, userID string, limit int) 
 
 	return allowed == 1, int(remaining), nil
 }
+
+// GetCount returns today's usage count for a user without incrementing it.
+func (r *RedisRateLimiter) GetCount(ctx context.Context, userID string) (int, error) {
+	key := fmt.Sprintf("rate_limit:%s:%s", userID, time.Now().UTC().Format("2006-01-02"))
+
+	val, err := r.rdb.Get(ctx, key).Int()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("ratelimit get count: %w", err)
+	}
+	return val, nil
+}
