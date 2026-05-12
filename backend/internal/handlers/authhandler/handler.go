@@ -57,7 +57,7 @@ func (h *Handler) Login() http.HandlerFunc {
 			Value:    state,
 			MaxAge:   300,
 			HttpOnly: true,
-			Secure:   true,
+			Secure:   false,
 			SameSite: http.SameSiteLaxMode,
 			Path:     "/",
 		})
@@ -69,6 +69,7 @@ func (h *Handler) Login() http.HandlerFunc {
 				Value:    redirectURI,
 				MaxAge:   300,
 				HttpOnly: true,
+				Secure: false,
 				SameSite: http.SameSiteLaxMode,
 				Path:     "/",
 			})

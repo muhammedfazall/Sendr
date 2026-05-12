@@ -2,6 +2,6 @@ frontend/.env
 backend/.env
 backend/private.pem
 backend/public.pem
-CODE_REVIEW.md
-FIX_GUIDE.md
-BACKEND_FIXES.md
+brr.md
+razorpay_guide_part1.md
+razorpay_guide_part2.md
