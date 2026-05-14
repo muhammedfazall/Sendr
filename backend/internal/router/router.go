@@ -21,6 +21,10 @@ import (
 	"github.com/muhammedfazall/Sendr/internal/middleware"
 	"github.com/muhammedfazall/Sendr/pkg/config"
 	"github.com/redis/go-redis/v9"
+	"github.com/muhammedfazall/Sendr/internal/adapters/paymentrepo"
+	"github.com/muhammedfazall/Sendr/internal/adapters/planrepo"
+	"github.com/muhammedfazall/Sendr/internal/handlers/paymenthandler"
+	"github.com/muhammedfazall/Sendr/internal/handlers/webhookhandler"
 )
 
 func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
@@ -39,11 +43,14 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	jobRepo := jobrepo.New(pool)
 	limiter := ratelimit.New(rdb)
 	tokenStore := tokenstore.New(rdb)
+	paymentRepo := paymentrepo.New(pool)
+	planRepo := planrepo.New(pool)
 
 	// Core services
 	authSvc := services.NewAuthService(userRepo, tokenStore, cfg)
-	apiKeySvc := services.NewApiKeyServices(keyRepo)
+	apiKeySvc := services.NewApiKeyServices(keyRepo, userRepo)
 	emailSvc := services.NewEmailService(apiKeySvc, jobRepo, userRepo, limiter)
+	paymentSvc := services.NewPaymentService(paymentRepo, planRepo, userRepo, cfg)
 
 	// Handlers
 	authH := authhandler.New(authSvc, cfg.FrontendURL, cfg.OAuthStateSecret, cfg.JWTPublicKeyPath)
@@ -51,9 +58,13 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	emailH := emailhandler.New(emailSvc, jobRepo)
 	meH := mehandler.New(userRepo, limiter)
 	healthH := health.NewHandler(health.NewService(pool, rdb))
+	paymentH := paymenthandler.New(paymentSvc)
+	webhookH := webhookhandler.New(paymentRepo, userRepo, cfg)
 
 	// Routes
 	r.Get("/health", healthH.Check())
+	r.Get("/plans", paymentH.ListPlans())
+	r.Post("/webhooks/razorpay", webhookH.Handle())
 
 	// Auth routes — rate-limited to prevent abuse.
 	r.Group(func(r chi.Router) {
@@ -72,6 +83,8 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	r.With(jwtMW).Get("/apikeys", apikeyH.List())
 	r.With(jwtMW).Delete("/apikeys/{id}", apikeyH.Revoke())
 	r.With(jwtMW).Get("/emails", emailH.List())
+	r.With(jwtMW).Post("/payments/orders", paymentH.CreateOrder())
+	r.With(jwtMW).Post("/payments/verify", paymentH.VerifyPayment())
 
 	apiKey := middleware.ValidateAPIKey(pool)
 	r.With(apiKey).Post("/emails/send", emailH.Send())

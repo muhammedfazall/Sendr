@@ -11,21 +11,24 @@ import (
 )
 
 type Config struct {
-	AppEnv             string
-	DBUrl              string
-	RedisUrl           string
-	JWTPrivateKeyPath  string
-	JWTPublicKeyPath   string
-	GoogleClientID     string
-	GoogleClientSecret string
-	OAuthStateSecret   string
-	SendGridKey        string
-	FromEmail          string
-	FromName           string
-	FrontendURL        string
-	Port               string
-	BackendURL         string
-	AllowedOrigins     []string
+	AppEnv                string
+	DBUrl                 string
+	RedisUrl              string
+	JWTPrivateKeyPath     string
+	JWTPublicKeyPath      string
+	GoogleClientID        string
+	GoogleClientSecret    string
+	OAuthStateSecret      string
+	SendGridKey           string
+	FromEmail             string
+	FromName              string
+	FrontendURL           string
+	Port                  string
+	BackendURL            string
+	RazorpayKeyID         string
+	RazorpayKeySecret     string
+	RazorpayWebhookSecret string
+	AllowedOrigins        []string
 }
 
 func Load() (*Config, error) {
@@ -35,21 +38,24 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		AppEnv:             appEnv,
-		DBUrl:              os.Getenv("DB_URL"),
-		RedisUrl:           os.Getenv("REDIS_URL"),
-		JWTPrivateKeyPath:  os.Getenv("JWT_PRIVATE_KEY_PATH"),
-		JWTPublicKeyPath:   os.Getenv("JWT_PUBLIC_KEY_PATH"),
-		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
-		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
-		OAuthStateSecret:   os.Getenv("OAUTH_STATE_SECRET"),
-		SendGridKey:        os.Getenv("SENDGRID_KEY"),
-		FromEmail:          getEnvOrDefault("FROM_EMAIL", "noreply@example.com"),
-		FromName:           getEnvOrDefault("FROM_NAME", "Sendr"),
-		FrontendURL:        getEnvOrDefault("FRONTEND_URL", "http://localhost:5173"),
-		Port:               getEnvOrDefault("PORT", "8080"),
-		BackendURL:         getEnvOrDefault("BACKEND_URL", "http://localhost:8080"),
-		AllowedOrigins:     splitCSV(getEnvOrDefault("ALLOWED_ORIGINS", getEnvOrDefault("FRONTEND_URL", "http://localhost:5173"))),
+		AppEnv:                appEnv,
+		DBUrl:                 os.Getenv("DB_URL"),
+		RedisUrl:              os.Getenv("REDIS_URL"),
+		JWTPrivateKeyPath:     os.Getenv("JWT_PRIVATE_KEY_PATH"),
+		JWTPublicKeyPath:      os.Getenv("JWT_PUBLIC_KEY_PATH"),
+		GoogleClientID:        os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret:    os.Getenv("GOOGLE_CLIENT_SECRET"),
+		OAuthStateSecret:      os.Getenv("OAUTH_STATE_SECRET"),
+		SendGridKey:           os.Getenv("SENDGRID_KEY"),
+		RazorpayKeyID:         os.Getenv("RAZORPAY_KEY_ID"),
+		RazorpayKeySecret:     os.Getenv("RAZORPAY_KEY_SECRET"),
+		RazorpayWebhookSecret: os.Getenv("RAZORPAY_WEBHOOK_SECRET"),
+		FromEmail:             getEnvOrDefault("FROM_EMAIL", "noreply@example.com"),
+		FromName:              getEnvOrDefault("FROM_NAME", "Sendr"),
+		FrontendURL:           getEnvOrDefault("FRONTEND_URL", "http://localhost:5173"),
+		Port:                  getEnvOrDefault("PORT", "8080"),
+		BackendURL:            getEnvOrDefault("BACKEND_URL", "http://localhost:8080"),
+		AllowedOrigins:        splitCSV(getEnvOrDefault("ALLOWED_ORIGINS", getEnvOrDefault("FRONTEND_URL", "http://localhost:5173"))),
 	}
 
 	// Validate required fields
@@ -62,7 +68,10 @@ func Load() (*Config, error) {
 		"GOOGLE_CLIENT_SECRET": cfg.GoogleClientSecret,
 		"OAUTH_STATE_SECRET":   cfg.OAuthStateSecret,
 		"SENDGRID_KEY":         cfg.SendGridKey,
+		"RAZORPAY_KEY_ID":     cfg.RazorpayKeyID,
+		"RAZORPAY_KEY_SECRET": cfg.RazorpayKeySecret,
 	}
+	
 	var missing []string
 	for k, v := range required {
 		if v == "" {

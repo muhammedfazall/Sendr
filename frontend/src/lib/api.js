@@ -144,4 +144,16 @@ export const api = {
     return request(`/emails?${params}`)
   },
   logout: () => request('/auth/logout', { method: 'POST' }),
+  // Payment / Plans
+  listPlans: () => request('/plans'),
+  createPaymentOrder: (planName) =>
+    request('/payments/orders', {
+      method: 'POST',
+      body: JSON.stringify({ plan_name: planName }),
+    }),
+  verifyPayment: (data) =>
+    request('/payments/verify', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 }

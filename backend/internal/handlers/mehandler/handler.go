@@ -59,6 +59,8 @@ func (h *Handler) Get() http.HandlerFunc {
 			"name":        user.Name,
 			"plan":        plan.Name,
 			"daily_limit": plan.DailyLimit,
+			"max_api_keys":   plan.MaxAPIKeys,
+			"rate_wait_secs": plan.RateWaitSecs,
 			"usage_today": usageToday,
 			"remaining":   remaining,
 		})

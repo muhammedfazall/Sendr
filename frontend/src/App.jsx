@@ -6,6 +6,7 @@ import Callback from './pages/Callback'
 import Dashboard from './pages/Dashboard'
 import APIKeys from './pages/APIKeys'
 import SendEmail from './pages/SendEmail'
+import Pricing from './pages/Pricing'
 
 function ProtectedRoute({ children }) {
   const { isAuthed, loading, sessionExpired, clearSessionExpired } = useAuth()
@@ -23,6 +24,7 @@ function AppRoutes() {
       <Route path="/keys" element={<ProtectedRoute><APIKeys /></ProtectedRoute>} />
       <Route path="/send" element={<ProtectedRoute><SendEmail /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
     </Routes>
   )
 }

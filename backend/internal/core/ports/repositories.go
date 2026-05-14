@@ -12,6 +12,7 @@ type UserRepository interface {
 	Upsert(ctx context.Context, googleID, email, name string) (*domain.User, error)
 	FindByID(ctx context.Context, id string) (*domain.User, error)
 	FindWithPlan(ctx context.Context, id string) (*domain.User, *domain.Plan, error)
+	UpdatePlan(ctx context.Context, userID, planName string) error
 }
 
 // APIKeyRepository defines persistence operations for API keys.
@@ -42,4 +43,18 @@ type JobRepository interface {
 	ReclaimZombies(ctx context.Context) (int64, error)
 	GetByID(ctx context.Context, jobID string) (*domain.Job, error)
 	ListByUser(ctx context.Context, userID, status string, limit, offset int) ([]domain.Job, error)
+}
+
+// PaymentRepository defines persistence for Razorpay payment records.
+type PaymentRepository interface {
+	Create(ctx context.Context, payment *domain.Payment) error
+	FindByOrderID(ctx context.Context, orderID string) (*domain.Payment, error)
+	MarkPaid(ctx context.Context, orderID, paymentID, signature string) error
+	MarkFailed(ctx context.Context, orderID string) error
+}
+
+// PlanRepository defines read operations for plans.
+type PlanRepository interface {
+	FindByName(ctx context.Context, name string) (*domain.Plan, error)
+	ListAll(ctx context.Context) ([]domain.Plan, error)
 }

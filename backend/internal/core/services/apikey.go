@@ -16,13 +16,36 @@ const maxAPIKeyCreateAttempts = 3
 
 type apiKeyService struct {
 	keys ports.APIKeyRepository
+	users ports.UserRepository
 }
 
-func NewApiKeyServices(keys ports.APIKeyRepository) ports.APIKeyService {
-	return &apiKeyService{keys: keys}
+func NewApiKeyServices(keys ports.APIKeyRepository, users ports.UserRepository) ports.APIKeyService {
+	return &apiKeyService{keys: keys, users: users}
 }
 
 func (s *apiKeyService) Create(ctx context.Context, userID, name string) (string, *domain.APIKey, error) {
+	// Check plan limit
+	_, plan, err := s.users.FindWithPlan(ctx, userID)
+	if err != nil {
+		return "", nil, fmt.Errorf("find plan: %w", err)
+	}
+	if plan.MaxAPIKeys > 0 { // -1 means unlimited
+		existing, err := s.keys.ListByUser(ctx, userID)
+		if err != nil {
+			return "", nil, fmt.Errorf("list keys: %w", err)
+		}
+		// Count non-revoked keys
+		active := 0
+		for _, k := range existing {
+			if !k.Revoked {
+				active++
+			}
+		}
+		if active >= plan.MaxAPIKeys {
+			return "", nil, fmt.Errorf("API key limit reached (%d/%d). Upgrade your plan", active, plan.MaxAPIKeys)
+		}
+	}
+	
 	for attempt := 0; attempt < maxAPIKeyCreateAttempts; attempt++ {
 		k, err := helper.GenerateAPIKey()
 		if err != nil {

@@ -51,13 +51,18 @@ if err != nil {
 }
 
 // Step 3 — Redis rate limit check
-allowed, remaining, err := s.rateLimiter.Check(ctx, key.UserID, plan.DailyLimit)
-if err != nil {
-	return nil, fmt.Errorf("%w: redis check failed: %s", constants.ErrInternalServer, err)
-}
-if !allowed {
-	_ = remaining // could include in error context / response header
-	return nil, constants.ErrRateLimitExceeded
+// -1 means unlimited (max plan)
+if plan.DailyLimit == -1 {
+    // Skip rate limiting entirely for unlimited plans
+} else {
+     allowed, remaining, err := s.rateLimiter.Check(ctx, key.UserID, plan.DailyLimit)
+     if err != nil {
+         return nil, fmt.Errorf("%w: redis check failed: %s", constants.ErrInternalServer, err)
+     }
+     if !allowed {
+         _ = remaining
+         return nil, constants.ErrRateLimitExceeded
+     }
 }
 
 job, err := s.jobs.Enqueue(ctx, key.UserID, key.ID, payload)

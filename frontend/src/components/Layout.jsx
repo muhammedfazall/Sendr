@@ -6,6 +6,8 @@ const nav = [
   { to: '/dashboard', label: 'Dashboard', icon: SquaresIcon },
   { to: '/keys', label: 'API Keys', icon: KeyIcon },
   { to: '/send', label: 'Send Email', icon: SendIcon },
+  { to: '/pricing', label: 'Pricing', icon: PricingIcon },
+  // <NavLink to="/pricing" icon="💎" label="Pricing" />
 ]
 
 export default function Layout({ children }) {
@@ -110,6 +112,14 @@ function LogoutIcon({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
       <path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M11 11l3-3-3-3M14 8H6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function PricingIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M8 1v14M4.5 4h5.25a2.25 2.25 0 010 4.5H4.5M4.5 8.5h6a2.25 2.25 0 010 4.5H4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

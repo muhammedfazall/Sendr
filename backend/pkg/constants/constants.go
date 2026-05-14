@@ -42,6 +42,12 @@ var (
 	// User errors
 	ErrUserNotFound = errors.New("user not found")
 
+	// Payment errors
+	ErrPaymentNotFound         = errors.New("payment not found")
+	ErrPaymentInvalidSignature = errors.New("invalid payment signature")
+	ErrPaymentUserMismatch     = errors.New("payment does not belong to user")
+	ErrPaymentAlreadyProcessed = errors.New("payment already processed")
+
 	// Rate limiting
 	ErrRateLimitExceeded = errors.New("daily rate limit exceeded")
 
@@ -55,11 +61,11 @@ var (
 // ── Canonical response messages ───────────────────────────────────────────────
 
 const (
-	MsgOK           = "OK"
-	MsgCreated      = "Created"
-	MsgInvalidBody  = "Invalid request body"
+	MsgOK            = "OK"
+	MsgCreated       = "Created"
+	MsgInvalidBody   = "Invalid request body"
 	MsgMissingFields = "Required fields are missing"
-	MsgUnauthorized = "Authentication required"
-	MsgNotFound     = "Resource not found"
-	MsgInternal     = "Internal server error"
+	MsgUnauthorized  = "Authentication required"
+	MsgNotFound      = "Resource not found"
+	MsgInternal      = "Internal server error"
 )

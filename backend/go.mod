@@ -1,6 +1,6 @@
 module github.com/muhammedfazall/Sendr
 
-go 1.25.3
+go 1.26
 
 require (
 	github.com/go-chi/chi/v5 v5.2.5
@@ -21,6 +21,7 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/razorpay/razorpay-go v1.4.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
