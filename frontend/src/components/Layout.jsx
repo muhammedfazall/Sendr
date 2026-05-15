@@ -6,8 +6,8 @@ const nav = [
   { to: '/dashboard', label: 'Dashboard', icon: SquaresIcon },
   { to: '/keys', label: 'API Keys', icon: KeyIcon },
   { to: '/send', label: 'Send Email', icon: SendIcon },
+  { to: '/history', label: 'Mail History', icon: HistoryIcon },
   { to: '/pricing', label: 'Pricing', icon: PricingIcon },
-  // <NavLink to="/pricing" icon="💎" label="Pricing" />
 ]
 
 export default function Layout({ children }) {
@@ -120,6 +120,15 @@ function PricingIcon({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
       <path d="M8 1v14M4.5 4h5.25a2.25 2.25 0 010 4.5H4.5M4.5 8.5h6a2.25 2.25 0 010 4.5H4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function HistoryIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <path d="M8 14A6 6 0 118 2a6 6 0 010 12z" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M8 5v3l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

@@ -6,6 +6,7 @@ import Callback from './pages/Callback'
 import Dashboard from './pages/Dashboard'
 import APIKeys from './pages/APIKeys'
 import SendEmail from './pages/SendEmail'
+import MailHistory from './pages/MailHistory'
 import Pricing from './pages/Pricing'
 
 function ProtectedRoute({ children }) {
@@ -23,6 +24,7 @@ function AppRoutes() {
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/keys" element={<ProtectedRoute><APIKeys /></ProtectedRoute>} />
       <Route path="/send" element={<ProtectedRoute><SendEmail /></ProtectedRoute>} />
+      <Route path="/history" element={<ProtectedRoute><MailHistory /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
       <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
     </Routes>
