@@ -16,27 +16,25 @@ type RedisRateLimiter struct {
 }
 
 var checkScript = redis.NewScript(`
-local current = redis.call("INCR", KEYS[1])
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+local limit = tonumber(ARGV[1])
+if current >= limit then
+  return {0, 0}
+end
+current = redis.call("INCR", KEYS[1])
 if current == 1 then
   redis.call("EXPIRE", KEYS[1], ARGV[2])
 end
-local limit = tonumber(ARGV[1])
 local remaining = limit - current
-if remaining < 0 then
-  remaining = 0
-end
-if current <= limit then
-  return {1, remaining}
-end
-return {0, remaining}
+return {1, remaining}
 `)
 
 func New(rdb *redis.Client) *RedisRateLimiter {
 	return &RedisRateLimiter{rdb: rdb}
 }
 
-// Check atomically increments the counter for today and reports whether
-// the caller is within their plan limit.
+// Check atomically reserves one send for today if the caller is within their
+// plan limit. Rejected requests do not increment usage.
 // Returns: allowed, remaining, error.
 func (r *RedisRateLimiter) Check(ctx context.Context, userID string, limit int) (bool, int, error) {
 	key := fmt.Sprintf("rate_limit:%s:%s", userID, time.Now().UTC().Format("2006-01-02"))

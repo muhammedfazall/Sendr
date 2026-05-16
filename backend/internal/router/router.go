@@ -9,6 +9,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/muhammedfazall/Sendr/internal/adapters/apikeyrepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/jobrepo"
+	"github.com/muhammedfazall/Sendr/internal/adapters/paymentrepo"
+	"github.com/muhammedfazall/Sendr/internal/adapters/planrepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/ratelimit"
 	"github.com/muhammedfazall/Sendr/internal/adapters/tokenstore"
 	"github.com/muhammedfazall/Sendr/internal/adapters/userrepo"
@@ -17,14 +19,12 @@ import (
 	"github.com/muhammedfazall/Sendr/internal/handlers/authhandler"
 	"github.com/muhammedfazall/Sendr/internal/handlers/emailhandler"
 	"github.com/muhammedfazall/Sendr/internal/handlers/mehandler"
+	"github.com/muhammedfazall/Sendr/internal/handlers/paymenthandler"
+	"github.com/muhammedfazall/Sendr/internal/handlers/webhookhandler"
 	"github.com/muhammedfazall/Sendr/internal/health"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
 	"github.com/muhammedfazall/Sendr/pkg/config"
 	"github.com/redis/go-redis/v9"
-	"github.com/muhammedfazall/Sendr/internal/adapters/paymentrepo"
-	"github.com/muhammedfazall/Sendr/internal/adapters/planrepo"
-	"github.com/muhammedfazall/Sendr/internal/handlers/paymenthandler"
-	"github.com/muhammedfazall/Sendr/internal/handlers/webhookhandler"
 )
 
 func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
@@ -79,6 +79,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	jwtMW := middleware.JWTAuth(cfg.JWTPublicKeyPath, tokenStore)
 	r.With(jwtMW).Post("/auth/logout", authH.Logout())
 	r.With(jwtMW).Get("/me", meH.Get())
+	r.With(jwtMW).Patch("/me", meH.Update())
 	r.With(jwtMW).Post("/apikeys", apikeyH.Create())
 	r.With(jwtMW).Get("/apikeys", apikeyH.List())
 	r.With(jwtMW).Delete("/apikeys/{id}", apikeyH.Revoke())
@@ -124,7 +125,7 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 
 			if r.Method == http.MethodOptions {

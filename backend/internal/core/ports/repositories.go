@@ -12,6 +12,7 @@ type UserRepository interface {
 	Upsert(ctx context.Context, googleID, email, name string) (*domain.User, error)
 	FindByID(ctx context.Context, id string) (*domain.User, error)
 	FindWithPlan(ctx context.Context, id string) (*domain.User, *domain.Plan, error)
+	UpdateProfile(ctx context.Context, userID, name string) (*domain.User, error)
 	UpdatePlan(ctx context.Context, userID, planName string) error
 }
 

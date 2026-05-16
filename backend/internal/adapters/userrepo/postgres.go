@@ -70,6 +70,21 @@ func (r *PostgresUserRepository) FindWithPlan(ctx context.Context, id string) (*
 	return &u, &p, nil
 }
 
+func (r *PostgresUserRepository) UpdateProfile(ctx context.Context, userID, name string) (*domain.User, error) {
+	var u domain.User
+	err := r.db.QueryRow(ctx,
+		`UPDATE users
+		 SET name = $1
+		 WHERE id = $2
+		 RETURNING id, email, name, google_id, plan_id, created_at`,
+		name, userID,
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.PlanID, &u.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("update profile: %w", err)
+	}
+	return &u, nil
+}
+
 func (r *PostgresUserRepository) UpdatePlan(ctx context.Context, userID, planName string) error {
 	tag, err := r.db.Exec(ctx,
 		`UPDATE users SET plan_id = (SELECT id FROM plans WHERE name = $1) WHERE id = $2`,
