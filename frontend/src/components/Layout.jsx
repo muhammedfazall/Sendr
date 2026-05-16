@@ -8,6 +8,7 @@ const nav = [
   { to: '/send', label: 'Send Email', icon: SendIcon },
   { to: '/history', label: 'Mail History', icon: HistoryIcon },
   { to: '/pricing', label: 'Pricing', icon: PricingIcon },
+  { to: '/profile', label: 'Profile', icon: UserIcon },
 ]
 
 export default function Layout({ children }) {
@@ -120,6 +121,15 @@ function PricingIcon({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
       <path d="M8 1v14M4.5 4h5.25a2.25 2.25 0 010 4.5H4.5M4.5 8.5h6a2.25 2.25 0 010 4.5H4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function UserIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="5" r="3" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M2.5 14c.7-2.6 2.7-4 5.5-4s4.8 1.4 5.5 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   )
 }

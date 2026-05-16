@@ -125,6 +125,7 @@ async function request(path, options = {}) {
 
 export const api = {
   me: () => request('/me'),
+  updateProfile: (payload) => request('/me', { method: 'PATCH', body: JSON.stringify(payload) }),
   createKey: (name) => request('/apikeys', { method: 'POST', body: JSON.stringify({ name }) }),
   listKeys: () => request('/apikeys'),
   revokeKey: (id) => request(`/apikeys/${id}`, { method: 'DELETE' }),

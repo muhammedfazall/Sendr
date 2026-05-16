@@ -8,6 +8,7 @@ import APIKeys from './pages/APIKeys'
 import SendEmail from './pages/SendEmail'
 import MailHistory from './pages/MailHistory'
 import Pricing from './pages/Pricing'
+import Profile from './pages/Profile'
 
 function ProtectedRoute({ children }) {
   const { isAuthed, loading, sessionExpired, clearSessionExpired } = useAuth()
@@ -25,6 +26,7 @@ function AppRoutes() {
       <Route path="/keys" element={<ProtectedRoute><APIKeys /></ProtectedRoute>} />
       <Route path="/send" element={<ProtectedRoute><SendEmail /></ProtectedRoute>} />
       <Route path="/history" element={<ProtectedRoute><MailHistory /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
       <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
     </Routes>
