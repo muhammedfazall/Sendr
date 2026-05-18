@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
+	"github.com/muhammedfazall/Sendr/pkg/config"
 	"github.com/muhammedfazall/Sendr/pkg/constants"
 	"github.com/muhammedfazall/Sendr/pkg/response"
 )
@@ -25,13 +25,14 @@ type Handler struct {
 	svc              ports.AuthService
 	frontendURL      string
 	oauthStateSecret string
+	secureCookie     bool
 	jwtPublicKey     *rsa.PublicKey
 }
 
-func New(svc ports.AuthService, frontendURL, oauthStateSecret, publicKeyPath string) *Handler {
-	keyBytes, err := os.ReadFile(publicKeyPath)
+func New(svc ports.AuthService, cfg *config.Config) *Handler {
+	keyBytes, err := cfg.JWTPublicKeyBytes()
 	if err != nil {
-		log.Fatalf("cannot read JWT public key: %v", err)
+		log.Fatalf("cannot load JWT public key: %v", err)
 	}
 
 	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyBytes)
@@ -41,8 +42,9 @@ func New(svc ports.AuthService, frontendURL, oauthStateSecret, publicKeyPath str
 
 	return &Handler{
 		svc:              svc,
-		frontendURL:      frontendURL,
-		oauthStateSecret: oauthStateSecret,
+		frontendURL:      cfg.FrontendURL,
+		oauthStateSecret: cfg.OAuthStateSecret,
+		secureCookie:     cfg.AppEnv == "production",
 		jwtPublicKey:     publicKey,
 	}
 }
@@ -57,7 +59,7 @@ func (h *Handler) Login() http.HandlerFunc {
 			Value:    state,
 			MaxAge:   300,
 			HttpOnly: true,
-			Secure:   false,
+			Secure:   h.secureCookie,
 			SameSite: http.SameSiteLaxMode,
 			Path:     "/",
 		})
@@ -69,7 +71,7 @@ func (h *Handler) Login() http.HandlerFunc {
 				Value:    redirectURI,
 				MaxAge:   300,
 				HttpOnly: true,
-				Secure: false,
+				Secure:   h.secureCookie,
 				SameSite: http.SameSiteLaxMode,
 				Path:     "/",
 			})
@@ -102,7 +104,7 @@ func (h *Handler) Callback() http.HandlerFunc {
 
 		// Clear the state cookie
 		http.SetCookie(w, &http.Cookie{
-			Name: "oauth_state", Value: "", MaxAge: -1, Path: "/",
+			Name: "oauth_state", Value: "", MaxAge: -1, Path: "/", Secure: h.secureCookie,
 		})
 
 		accessToken, refreshToken, err := h.svc.HandleCallback(r.Context(), r.URL.Query().Get("code"))
@@ -121,7 +123,7 @@ func (h *Handler) Callback() http.HandlerFunc {
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
 			Path:     "/",
-			Secure:   false, // must be false for CLI local HTTP callback to work
+			Secure:   h.secureCookie,
 		})
 
 		// Refresh token cookie — lasts 7 days, HttpOnly so JS can't touch it
@@ -132,7 +134,7 @@ func (h *Handler) Callback() http.HandlerFunc {
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
 			Path:     "/auth", // only sent to /auth/* routes
-			Secure:   false,
+			Secure:   h.secureCookie,
 		})
 
 		// Redirect to CLI local server if present, otherwise frontend
@@ -141,7 +143,7 @@ func (h *Handler) Callback() http.HandlerFunc {
 			// Pass token directly in URL for CLI
 			redirectTo = fmt.Sprintf("%s?token=%s", c.Value, accessToken)
 			http.SetCookie(w, &http.Cookie{
-				Name: "oauth_redirect_uri", Value: "", MaxAge: -1, Path: "/",
+				Name: "oauth_redirect_uri", Value: "", MaxAge: -1, Path: "/", Secure: h.secureCookie,
 			})
 		}
 
@@ -161,7 +163,7 @@ func (h *Handler) Token() http.HandlerFunc {
 
 		// Clear the cookie immediately — one-time use
 		http.SetCookie(w, &http.Cookie{
-			Name: "auth_token", Value: "", MaxAge: -1, Path: "/",
+			Name: "auth_token", Value: "", MaxAge: -1, Path: "/", Secure: h.secureCookie,
 		})
 
 		response.JSON(w, http.StatusOK, map[string]string{
@@ -198,7 +200,7 @@ func (h *Handler) Refresh() http.HandlerFunc {
 		if err != nil {
 			// Invalid/expired refresh → clear the cookie and force re-login
 			http.SetCookie(w, &http.Cookie{
-				Name: "refresh_token", Value: "", MaxAge: -1, Path: "/auth",
+				Name: "refresh_token", Value: "", MaxAge: -1, Path: "/auth", Secure: h.secureCookie,
 			})
 			response.Error(w, http.StatusUnauthorized, "refresh_failed", "refresh token is invalid or expired")
 			return
@@ -212,7 +214,7 @@ func (h *Handler) Refresh() http.HandlerFunc {
 			HttpOnly: true,
 			SameSite: http.SameSiteStrictMode,
 			Path:     "/auth",
-			Secure:   true,
+			Secure:   h.secureCookie,
 		})
 
 		response.JSON(w, http.StatusOK, map[string]string{
@@ -244,7 +246,7 @@ func (h *Handler) Logout() http.HandlerFunc {
 
 		// Clear the refresh token cookie
 		http.SetCookie(w, &http.Cookie{
-			Name: "refresh_token", Value: "", MaxAge: -1, Path: "/auth",
+			Name: "refresh_token", Value: "", MaxAge: -1, Path: "/auth", Secure: h.secureCookie,
 		})
 
 		w.WriteHeader(http.StatusNoContent)

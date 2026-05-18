@@ -14,6 +14,8 @@ type Config struct {
 	AppEnv                string
 	DBUrl                 string
 	RedisUrl              string
+	JWTPrivateKeyPEM      string
+	JWTPublicKeyPEM       string
 	JWTPrivateKeyPath     string
 	JWTPublicKeyPath      string
 	GoogleClientID        string
@@ -41,6 +43,8 @@ func Load() (*Config, error) {
 		AppEnv:                appEnv,
 		DBUrl:                 os.Getenv("DB_URL"),
 		RedisUrl:              os.Getenv("REDIS_URL"),
+		JWTPrivateKeyPEM:      os.Getenv("JWT_PRIVATE_KEY_PEM"),
+		JWTPublicKeyPEM:       os.Getenv("JWT_PUBLIC_KEY_PEM"),
 		JWTPrivateKeyPath:     os.Getenv("JWT_PRIVATE_KEY_PATH"),
 		JWTPublicKeyPath:      os.Getenv("JWT_PUBLIC_KEY_PATH"),
 		GoogleClientID:        os.Getenv("GOOGLE_CLIENT_ID"),
@@ -62,21 +66,25 @@ func Load() (*Config, error) {
 	required := map[string]string{
 		"DB_URL":               cfg.DBUrl,
 		"REDIS_URL":            cfg.RedisUrl,
-		"JWT_PRIVATE_KEY_PATH": cfg.JWTPrivateKeyPath,
-		"JWT_PUBLIC_KEY_PATH":  cfg.JWTPublicKeyPath,
 		"GOOGLE_CLIENT_ID":     cfg.GoogleClientID,
 		"GOOGLE_CLIENT_SECRET": cfg.GoogleClientSecret,
 		"OAUTH_STATE_SECRET":   cfg.OAuthStateSecret,
 		"SENDGRID_KEY":         cfg.SendGridKey,
-		"RAZORPAY_KEY_ID":     cfg.RazorpayKeyID,
-		"RAZORPAY_KEY_SECRET": cfg.RazorpayKeySecret,
+		"RAZORPAY_KEY_ID":      cfg.RazorpayKeyID,
+		"RAZORPAY_KEY_SECRET":  cfg.RazorpayKeySecret,
 	}
-	
+
 	var missing []string
 	for k, v := range required {
 		if v == "" {
 			missing = append(missing, k)
 		}
+	}
+	if cfg.JWTPrivateKeyPEM == "" && cfg.JWTPrivateKeyPath == "" {
+		missing = append(missing, "JWT_PRIVATE_KEY_PEM or JWT_PRIVATE_KEY_PATH")
+	}
+	if cfg.JWTPublicKeyPEM == "" && cfg.JWTPublicKeyPath == "" {
+		missing = append(missing, "JWT_PUBLIC_KEY_PEM or JWT_PUBLIC_KEY_PATH")
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing required env vars: %v", missing)
@@ -100,6 +108,14 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+func (c *Config) JWTPrivateKeyBytes() ([]byte, error) {
+	return keyBytes(c.JWTPrivateKeyPEM, c.JWTPrivateKeyPath, "JWT_PRIVATE_KEY")
+}
+
+func (c *Config) JWTPublicKeyBytes() ([]byte, error) {
+	return keyBytes(c.JWTPublicKeyPEM, c.JWTPublicKeyPath, "JWT_PUBLIC_KEY")
+}
+
 func getEnvOrDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -119,6 +135,24 @@ func splitCSV(value string) []string {
 	}
 
 	return out
+}
+
+func keyBytes(pemValue, path, name string) ([]byte, error) {
+	if pemValue != "" {
+		return []byte(normalizePEM(pemValue)), nil
+	}
+	if path == "" {
+		return nil, fmt.Errorf("%s_PEM or %s_PATH is required", name, name)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s_PATH: %w", name, err)
+	}
+	return raw, nil
+}
+
+func normalizePEM(value string) string {
+	return strings.ReplaceAll(strings.TrimSpace(value), `\n`, "\n")
 }
 
 func validateOrigin(origin string) error {
