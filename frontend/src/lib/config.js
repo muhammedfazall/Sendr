@@ -2,6 +2,7 @@ const allowedHosts = new Set([
   'localhost:8080',
   '127.0.0.1:8080',
   'sendr.app',
+  'sendr.duckdns.org',
 ])
 
 export function getApiBaseUrl() {
