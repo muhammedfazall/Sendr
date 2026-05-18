@@ -5,12 +5,12 @@ import (
 	"crypto/subtle"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
+	"github.com/muhammedfazall/Sendr/pkg/config"
 	"github.com/muhammedfazall/Sendr/pkg/helpers"
 	"github.com/muhammedfazall/Sendr/pkg/response"
 )
@@ -20,10 +20,10 @@ type contextKey string
 
 const UserClaimsKey contextKey = "userClaims"
 
-func JWTAuth(publicKeyPath string, tokens ports.TokenStore) func(http.Handler) http.Handler {
-	keyBytes, err := os.ReadFile(publicKeyPath)
+func JWTAuth(cfg *config.Config, tokens ports.TokenStore) func(http.Handler) http.Handler {
+	keyBytes, err := cfg.JWTPublicKeyBytes()
 	if err != nil {
-		log.Fatalf("cannot read JWT public key: %v", err)
+		log.Fatalf("cannot load JWT public key: %v", err)
 	}
 	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyBytes)
 	if err != nil {

@@ -1,5 +1,6 @@
 frontend/.env
 backend/.env
+backend/.env.production
 backend/private.pem
 backend/public.pem
 brr.md

@@ -53,7 +53,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	paymentSvc := services.NewPaymentService(paymentRepo, planRepo, userRepo, cfg)
 
 	// Handlers
-	authH := authhandler.New(authSvc, cfg.FrontendURL, cfg.OAuthStateSecret, cfg.JWTPublicKeyPath)
+	authH := authhandler.New(authSvc, cfg)
 	apikeyH := apikeyhandler.New(apiKeySvc)
 	emailH := emailhandler.New(emailSvc, jobRepo)
 	meH := mehandler.New(userRepo, limiter)
@@ -76,7 +76,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	})
 
 	// JWT-protected routes
-	jwtMW := middleware.JWTAuth(cfg.JWTPublicKeyPath, tokenStore)
+	jwtMW := middleware.JWTAuth(cfg, tokenStore)
 	r.With(jwtMW).Post("/auth/logout", authH.Logout())
 	r.With(jwtMW).Get("/me", meH.Get())
 	r.With(jwtMW).Patch("/me", meH.Update())

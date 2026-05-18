@@ -1,0 +1,16 @@
+.env
+*.env
+private.pem
+public.pem
+.gocache/
+tmp/
+dist/
+coverage.out
+*.test
+server
+*.exe
+.git/
+.gitignore
+Dockerfile*
+docker-compose.yml
+README.md
