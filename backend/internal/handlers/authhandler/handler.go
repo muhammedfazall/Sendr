@@ -121,7 +121,7 @@ func (h *Handler) Callback() http.HandlerFunc {
 			Value:    accessToken,
 			MaxAge:   60,
 			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			SameSite: http.SameSiteNoneMode,
 			Path:     "/",
 			Secure:   h.secureCookie,
 		})
@@ -132,7 +132,7 @@ func (h *Handler) Callback() http.HandlerFunc {
 			Value:    refreshToken,
 			MaxAge:   int(constants.RefreshTokenExpiry.Seconds()),
 			HttpOnly: true,
-			SameSite: http.SameSiteStrictMode,
+			SameSite: http.SameSiteNoneMode,
 			Path:     "/auth", // only sent to /auth/* routes
 			Secure:   h.secureCookie,
 		})
