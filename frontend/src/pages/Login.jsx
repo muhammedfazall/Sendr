@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { getApiBaseUrl } from '../lib/config'
 
 const API = getApiBaseUrl()
@@ -6,6 +7,14 @@ export default function Login() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center" style={{ background: 'var(--bg)' }}>
       <div className="w-full max-w-sm px-6">
+
+        {/* Back to home */}
+        <Link to="/" className="inline-flex items-center gap-1.5 text-xs mb-8 transition-colors duration-150 hover:text-white" style={{ color: 'var(--muted)' }}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M10 4L6 8l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Back to home
+        </Link>
 
         {/* Logo */}
         <div className="mb-10 text-center">

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './lib/auth'
 import { useAuth } from './lib/auth-context'
+import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Callback from './pages/Callback'
 import Dashboard from './pages/Dashboard'
@@ -14,13 +15,14 @@ function ProtectedRoute({ children }) {
   const { isAuthed, loading, sessionExpired, clearSessionExpired } = useAuth()
   if (loading) return <Splash />
   if (sessionExpired) return <SessionExpired onDismiss={clearSessionExpired} />
-  return isAuthed ? children : <Navigate to="/" replace />
+  return isAuthed ? children : <Navigate to="/login" replace />
 }
 
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Login />} />
+      <Route path="/" element={<Landing />} />
+      <Route path="/login" element={<Login />} />
       <Route path="/callback" element={<Callback />} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/keys" element={<ProtectedRoute><APIKeys /></ProtectedRoute>} />

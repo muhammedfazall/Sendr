@@ -11,22 +11,27 @@
 7. [Email Queue System](#email-queue-system)
 8. [Rate Limiting](#rate-limiting)
 9. [Plans & Limits](#plans--limits)
-10. [Configuration](#configuration)
-11. [Capacity & Scalability](#capacity--scalability)
-12. [Security Considerations](#security-considerations)
-13. [Deployment](#deployment)
+10. [Payments (Razorpay)](#payments-razorpay)
+11. [Frontend Architecture](#frontend-architecture)
+12. [Configuration](#configuration)
+13. [Capacity & Scalability](#capacity--scalability)
+14. [Security Considerations](#security-considerations)
+15. [Deployment](#deployment)
 
 ---
 
 ## Project Overview
 
 **Sendr** is a developer-facing transactional email API built in Go. It provides a queued email delivery system with:
+- Landing page for product introduction and user onboarding
 - Google OAuth authentication
 - API key-based access
-- Rate limiting per plan
+- Tiered subscription plans with Razorpay payment integration
+- Rate limiting per plan (daily email limits + wait-between-sends)
 - Automatic retries with exponential backoff
 - Dead Letter Queue (DLQ) for failed emails
 - Job status polling
+- Dashboard with email history, API key management, and profile management
 
 ---
 
@@ -39,8 +44,10 @@
 | Database | PostgreSQL 16 |
 | Cache/Queue | Redis 7 |
 | Email Provider | SendGrid |
+| Payments | Razorpay |
 | JWT | RS256 |
-| Frontend | React + Vite |
+| Frontend | React 19 + Vite 8 |
+| CSS | Tailwind CSS v4 |
 | Containerization | Docker + Docker Compose |
 
 ---
@@ -55,31 +62,60 @@ backend/
 │   └── server/          # Entry point
 ├── internal/
 │   ├── core/
-│   │   ├── domain/      # Business models
-│   │   ├── ports/      # Interface definitions
-│   │   └── services/   # Business logic
-│   ├── adapters/       # Infrastructure implementations
+│   │   ├── domain/      # Business models (User, Plan, APIKey, Job, Payment)
+│   │   ├── ports/       # Interface definitions
+│   │   └── services/    # Business logic
+│   ├── adapters/        # Infrastructure implementations
 │   │   ├── userrepo/           # PostgreSQL user repository
 │   │   ├── apikeyrepo/         # PostgreSQL API key repository
 │   │   ├── jobrepo/            # PostgreSQL job repository
+│   │   ├── planrepo/           # PostgreSQL plan repository
+│   │   ├── paymentrepo/        # PostgreSQL payment repository
 │   │   ├── ratelimit/          # Redis rate limiter
 │   │   ├── tokenstore/         # Redis token store
 │   │   └── emailsender/        # SendGrid adapter
-│   ├── handlers/       # HTTP handlers
+│   ├── handlers/        # HTTP handlers
 │   │   ├── authhandler/
 │   │   ├── apikeyhandler/
 │   │   ├── emailhandler/
-│   │   └── mehandler/
-│   ├── middleware/     # HTTP middleware (JWT, CORS, etc.)
-│   ├── worker/         # Background job processor
-│   ├── router/         # Route definitions
-│   └── health/         # Health check endpoints
+│   │   ├── mehandler/
+│   │   ├── paymenthandler/     # Razorpay order/verify
+│   │   └── webhookhandler/     # Razorpay webhook receiver
+│   ├── middleware/      # HTTP middleware (JWT, CORS, API key, etc.)
+│   ├── worker/          # Background job processor
+│   ├── router/          # Route definitions
+│   └── health/          # Health check endpoints
 ├── pkg/
-│   ├── config/         # Configuration loading
-│   ├── db/             # Database connections
-│   ├── constants/      # Error definitions
-│   └── response/      # HTTP response helpers
-└── migrations/         # Database migrations
+│   ├── config/          # Configuration loading
+│   ├── db/              # Database connections
+│   ├── constants/       # Error definitions
+│   └── response/        # HTTP response helpers
+└── migrations/          # Database migrations (6 migrations)
+
+frontend/
+├── src/
+│   ├── pages/
+│   │   ├── Landing.jsx         # Public landing page
+│   │   ├── Login.jsx           # Google OAuth sign-in
+│   │   ├── Callback.jsx        # OAuth callback handler
+│   │   ├── Dashboard.jsx       # Main dashboard
+│   │   ├── APIKeys.jsx         # API key management
+│   │   ├── SendEmail.jsx       # Email composer
+│   │   ├── MailHistory.jsx     # Email job history
+│   │   ├── Pricing.jsx         # Plan upgrade (Razorpay)
+│   │   └── Profile.jsx         # User profile
+│   ├── components/
+│   │   └── Layout.jsx          # Sidebar layout (authenticated)
+│   ├── lib/
+│   │   ├── api.js              # API client
+│   │   ├── auth.jsx            # Auth provider
+│   │   ├── auth-context.js     # Auth context
+│   │   └── config.js           # API base URL config
+│   ├── index.css               # Global styles + design tokens
+│   ├── landing.css             # Landing page styles
+│   ├── main.jsx                # React entry point
+│   └── App.jsx                 # Router + route definitions
+└── index.html                  # HTML entry with SEO meta tags
 ```
 
 ### Data Flow
@@ -105,7 +141,10 @@ User Request → API Key Validation → Rate Limit Check → Job Enqueue → 202
 |--------|------|-------------|
 | id | UUID | Primary key |
 | name | TEXT | Plan name (free/pro/max) |
-| daily_limit | INT | Maximum emails per day |
+| daily_limit | INT | Maximum emails per day (-1 = unlimited) |
+| max_api_keys | INT | Maximum API keys per user (-1 = unlimited) |
+| rate_wait_secs | INT | Minimum seconds between email sends (0 = no wait) |
+| price_paise | INT | Monthly price in paise (0 = free) |
 | created_at | TIMESTAMPTZ | Creation timestamp |
 
 #### `users`
@@ -151,15 +190,36 @@ User Request → API Key Validation → Rate Limit Check → Job Enqueue → 202
 | payload | JSONB | Original email payload |
 | error_message | TEXT | Reason for failure |
 
+#### `payments`
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| user_id | UUID | Foreign key to users |
+| razorpay_order_id | TEXT | Razorpay order ID (unique) |
+| razorpay_payment_id | TEXT | Razorpay payment ID (set after payment) |
+| razorpay_signature | TEXT | Razorpay signature (for verification) |
+| plan_name | TEXT | Target plan name |
+| amount_paise | INT | Amount charged in paise |
+| currency | TEXT | Currency code (default: INR) |
+| status | TEXT | created/paid/failed |
+| created_at | TIMESTAMPTZ | Creation timestamp |
+| updated_at | TIMESTAMPTZ | Last update timestamp |
+
 ---
 
 ## API Endpoints
 
-### Health & Authentication
+### Health & Public
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | `GET` | `/health` | None | Liveness check |
+| `GET` | `/plans` | None | List all available plans |
+
+### Authentication
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
 | `GET` | `/auth/google` | None | Start OAuth flow |
 | `GET` | `/auth/google/callback` | None | OAuth callback, returns JWT |
 | `GET` | `/auth/token` | JWT | Get token info |
@@ -171,22 +231,31 @@ User Request → API Key Validation → Rate Limit Check → Job Enqueue → 202
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | `GET` | `/me` | JWT | Get current user profile + plan |
+| `PATCH` | `/me` | JWT | Update user profile |
 
 ### API Keys
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/apikeys` | JWT | Create new API key |
+| `POST` | `/apikeys` | JWT | Create new API key (enforces plan limit) |
 | `GET` | `/apikeys` | JWT | List user's API keys |
-| `DELETE` | `/apikeys/:id` | JWT | Revoke API key |
+| `DELETE` | `/apikeys/{id}` | JWT | Revoke API key |
 
 ### Emails
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/emails/send` | API Key | Queue an email |
-| `GET` | `/emails/:id` | API Key | Get job status |
+| `POST` | `/emails/send` | API Key | Queue an email (enforces rate limit + wait) |
+| `GET` | `/emails/{id}` | API Key | Get job status |
 | `GET` | `/emails` | JWT | List user's email history |
+
+### Payments (Razorpay)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/payments/orders` | JWT | Create Razorpay order for plan upgrade |
+| `POST` | `/payments/verify` | JWT | Verify Razorpay payment signature |
+| `POST` | `/webhooks/razorpay` | None | Razorpay webhook (signature-verified) |
 
 ---
 
@@ -267,13 +336,97 @@ PENDING → PROCESSING → SENT
 
 ## Plans & Limits
 
-| Plan | Daily Limit | Use Case |
-|------|-------------|----------|
-| free | 100 emails/day | Development/Testing |
-| pro | 1,000 emails/day | Small projects |
-| max | 10,000 emails/day | Production applications |
+| Plan | Daily Limit | Max API Keys | Wait Between Sends | Price (INR) |
+|------|-------------|-------------|-------------------|-------------|
+| free | 5 emails/day | 1 | 30 seconds | ₹0 (free forever) |
+| pro | 10 emails/day | 3 | 5 seconds | ₹299/month |
+| max | Unlimited | Unlimited | None | ₹999/month |
 
-**To upgrade**: Database update to user's `plan_id`
+> **Note**: `daily_limit = -1` means unlimited. `max_api_keys = -1` means unlimited. `rate_wait_secs = 0` means no wait.
+
+**To upgrade**: Users upgrade through the Pricing page in the dashboard. Razorpay handles payment processing, and the plan is upgraded automatically after successful payment verification (via frontend verification or webhook).
+
+---
+
+## Payments (Razorpay)
+
+### Payment Flow
+
+```
+User clicks "Upgrade" → POST /payments/orders → Razorpay Order created
+        ↓
+Razorpay Checkout opens → User completes payment
+        ↓
+POST /payments/verify → Signature verified → Plan upgraded
+        ↓ (backup)
+POST /webhooks/razorpay → Webhook verifies + upgrades plan
+```
+
+### Payment Lifecycle
+
+| Status | Description |
+|--------|-------------|
+| `created` | Order created, awaiting payment |
+| `paid` | Payment verified, plan upgraded |
+| `failed` | Payment failed or rejected |
+
+### Idempotency
+
+Payment verification is idempotent — if a payment is already marked as `paid`, the plan upgrade is retried and success is returned. This prevents issues with duplicate webhook deliveries or race conditions between frontend verification and webhook.
+
+---
+
+## Frontend Architecture
+
+### User Flow
+
+```
+Landing Page (/) → Login (/login) → Google OAuth → Callback (/callback) → Dashboard (/dashboard)
+```
+
+### Route Map
+
+| Route | Component | Auth | Description |
+|-------|-----------|------|-------------|
+| `/` | Landing | Public | Product landing page |
+| `/login` | Login | Public | Google OAuth sign-in |
+| `/callback` | Callback | Public | OAuth callback handler |
+| `/dashboard` | Dashboard | Protected | Main dashboard with stats |
+| `/keys` | APIKeys | Protected | API key management |
+| `/send` | SendEmail | Protected | Email composer |
+| `/history` | MailHistory | Protected | Email job history |
+| `/pricing` | Pricing | Protected | Plan comparison + Razorpay upgrade |
+| `/profile` | Profile | Protected | User profile management |
+
+### Landing Page
+
+The landing page (`/`) is the public-facing entry point with the following sections:
+
+1. **Sticky Navbar** — Glassmorphism blur on scroll, navigation links, CTA
+2. **Hero Section** — Gradient headline, subtitle, live code snippet (curl example), stats bar
+3. **Trust Bar** — Tech stack badges (Go, PostgreSQL, Redis, SendGrid, Docker)
+4. **Features Grid** (×6) — Queued Delivery, Automatic Retries, Secure API Keys, Real-time Status, Rate Limiting, Dead Letter Queue
+5. **How it Works** (×3) — Create Account → Generate API Key → Send Emails
+6. **Pricing Cards** (×3) — Free, Pro, Max plans with accurate limits
+7. **CTA Section** — Final call-to-action with glowing background
+8. **Footer** — Brand, links, copyright
+
+### Design System
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--bg` | `#0a0a0a` | Page background |
+| `--surface` | `#111111` | Card/panel backgrounds |
+| `--border` | `#1f1f1f` | Default borders |
+| `--border-hover` | `#2e2e2e` | Hover-state borders |
+| `--text` | `#e8e8e8` | Primary text |
+| `--muted` | `#666666` | Secondary/muted text |
+| `--accent` | `#00d084` | Brand green (CTAs, highlights) |
+| `--accent-dim` | `rgba(0,208,132,0.08)` | Accent background tint |
+| `--accent-border` | `rgba(0,208,132,0.2)` | Accent borders |
+| `--danger` | `#ff4d4d` | Error/destructive actions |
+
+**Typography**: DM Sans (UI) + DM Mono (code)
 
 ---
 
@@ -294,9 +447,13 @@ PENDING → PROCESSING → SENT
 | `SENDGRID_KEY` | Yes | SendGrid API key | SG.xxx |
 | `FROM_EMAIL` | Yes | Sender email address | noreply@example.com |
 | `FROM_NAME` | Yes | Sender display name | Sendr |
+| `RAZORPAY_KEY_ID` | Yes | Razorpay key ID | rzp_test_xxx |
+| `RAZORPAY_KEY_SECRET` | Yes | Razorpay key secret | xxx |
+| `RAZORPAY_WEBHOOK_SECRET` | Yes | Razorpay webhook secret | xxx |
 | `PORT` | No | Server port (default: 8080) | 8080 |
 | `FRONTEND_URL` | No | Frontend origin | http://localhost:5173 |
 | `ALLOWED_ORIGINS` | No | CORS origins (comma-separated) | http://localhost:5173 |
+| `VITE_API_URL` | Yes | Frontend env: backend API URL | http://localhost:8080 |
 
 ### Generating Keys
 
