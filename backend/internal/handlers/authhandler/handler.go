@@ -138,7 +138,7 @@ func (h *Handler) Callback() http.HandlerFunc {
 		})
 
 		// Redirect to CLI local server if present, otherwise frontend
-		redirectTo := fmt.Sprintf("%s/callback", h.frontendURL)
+		redirectTo := fmt.Sprintf("%s/callback?token=%s", h.frontendURL, accessToken)
 		if c, err := r.Cookie("oauth_redirect_uri"); err == nil && c.Value != "" {
 			// Pass token directly in URL for CLI
 			redirectTo = fmt.Sprintf("%s?token=%s", c.Value, accessToken)
