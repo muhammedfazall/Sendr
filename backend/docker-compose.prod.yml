@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sendr_api
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.migrate
+    container_name: sendr_migrate
+    env_file:
+      - .env
+    # Executes the migration and then gracefully exits
+    command: ["-path", "/migrations", "-database", "${DB_URL}", "up"]
+    restart: "no"
