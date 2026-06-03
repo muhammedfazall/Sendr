@@ -39,3 +39,4 @@ frontend/*.local
 *.njsproj
 *.sln
 *.sw?
+PROJECT_DOCUMENTATION.md
