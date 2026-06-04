@@ -124,9 +124,5 @@ func TestMockSenderCleanState(t *testing.T) {
 	}
 }
 
-func TestMockSenderInterface(t *testing.T) {
-	var s Sender = &MockSender{}
-	if s == nil {
-		t.Fatal("MockSender should implement Sender interface")
-	}
-}
+
+var _ Sender = (*MockSender)(nil)
