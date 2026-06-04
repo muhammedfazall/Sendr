@@ -1,6 +1,7 @@
 package emailhandler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -10,13 +11,18 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/muhammedfazall/Sendr/internal/adapters/jobrepo"
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
 	"github.com/muhammedfazall/Sendr/pkg/constants"
 	"github.com/muhammedfazall/Sendr/pkg/response"
 )
+
+// jobReader defines the job read methods the handler needs.
+type jobReader interface {
+	GetByID(ctx context.Context, jobID string) (*domain.Job, error)
+	ListByUser(ctx context.Context, userID, status string, limit, offset int) ([]domain.Job, error)
+}
 
 const (
 	maxSubjectLength = 998
@@ -28,10 +34,10 @@ const (
 // not JWT — callers authenticate with their mk_live_... key.
 type Handler struct {
 	email ports.EmailService
-	jobDB *jobrepo.PostgresJobRepository
+	jobDB jobReader
 }
 
-func New(email ports.EmailService, jobDB *jobrepo.PostgresJobRepository) *Handler {
+func New(email ports.EmailService, jobDB jobReader) *Handler {
 	return &Handler{email: email, jobDB: jobDB}
 }
 

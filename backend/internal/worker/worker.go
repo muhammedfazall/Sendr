@@ -6,9 +6,17 @@ import (
 	"time"
 
 	"github.com/muhammedfazall/Sendr/internal/adapters/emailsender"
-	"github.com/muhammedfazall/Sendr/internal/adapters/jobrepo"
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 )
+
+// jobRepository defines the repo methods the worker needs.
+type jobRepository interface {
+	MarkDone(ctx context.Context, jobID string) error
+	MarkFailed(ctx context.Context, jobID string, backoff time.Duration) error
+	MoveToDLQ(ctx context.Context, job domain.Job, errMsg string) error
+	ReclaimZombies(ctx context.Context) (int64, error)
+	ClaimBatch(ctx context.Context, batchSize int) ([]domain.Job, error)
+}
 
 // backoffSchedule maps retry attempt (0-indexed) to how long to wait before
 // the next try. Capped at the last entry for attempts beyond len-1.
@@ -20,12 +28,12 @@ var backoffSchedule = []time.Duration{
 
 // Worker polls the job queue and processes jobs concurrently.
 type Worker struct {
-	repo   *jobrepo.PostgresJobRepository
+	repo   jobRepository
 	sender emailsender.Sender
 	log    *slog.Logger
 }
 
-func New(repo *jobrepo.PostgresJobRepository, sender emailsender.Sender, log *slog.Logger) *Worker {
+func New(repo jobRepository, sender emailsender.Sender, log *slog.Logger) *Worker {
 	return &Worker{repo: repo, sender: sender, log: log}
 }
 

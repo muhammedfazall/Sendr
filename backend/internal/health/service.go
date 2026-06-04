@@ -3,9 +3,18 @@ package health
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
+
+// dbPinger defines the database ping method needed by the health service.
+type dbPinger interface {
+	Ping(ctx context.Context) error
+}
+
+// redisPinger defines the Redis ping method needed by the health service.
+type redisPinger interface {
+	Ping(ctx context.Context) *redis.StatusCmd
+}
 
 // HealthStatus holds the status of each dependency.
 type HealthStatus struct {
@@ -16,12 +25,12 @@ type HealthStatus struct {
 
 // Service contains the business logic for health checks.
 type Service struct {
-	db  *pgxpool.Pool
-	rdb *redis.Client
+	db  dbPinger
+	rdb redisPinger
 }
 
 // NewService creates a new health Service.
-func NewService(db *pgxpool.Pool, rdb *redis.Client) *Service {
+func NewService(db dbPinger, rdb redisPinger) *Service {
 	return &Service{db: db, rdb: rdb}
 }
 
