@@ -13,15 +13,16 @@ function validateEmailForm(form) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.to.trim())) return 'Enter a valid recipient email.'
   if (!form.subject.trim()) return 'Subject is required.'
   if (form.subject.length > 998) return 'Subject must be under 998 characters.'
-  if (!form.body.trim()) return 'Body is required.'
-  if (form.body.length > 50000) return 'Body must be under 50 KB.'
+  if (!form.textBody.trim() && !form.htmlBody.trim()) return 'Text or HTML body is required.'
+  if (form.textBody.length > 50000) return 'Text body must be under 50 KB.'
+  if (form.htmlBody.length > 50000) return 'HTML body must be under 50 KB.'
   return null
 }
 
 export default function SendEmail() {
   const [keys, setKeys] = useState([])
   const [selectedKey, setSelectedKey] = useState('')
-  const [form, setForm] = useState({ to: '', subject: '', body: '' })
+  const [form, setForm] = useState({ to: '', subject: '', textBody: '', htmlBody: '', bodyType: 'text' })
   const [sending, setSending] = useState(false)
   const [job, setJob] = useState(null)
   const [error, setError] = useState(null)
@@ -102,11 +103,14 @@ export default function SendEmail() {
     setJob(null)
 
     try {
-      const data = await api.sendEmail({
-        to: form.to.trim(),
+      const payload = {
+        to: [form.to.trim()],
         subject: form.subject.trim(),
-        body: form.body,
-      }, fullKey)
+      }
+      if (form.textBody.trim()) payload.text_body = form.textBody
+      if (form.htmlBody.trim()) payload.html_body = form.htmlBody
+
+      const data = await api.sendEmail(payload, fullKey)
       setJob({ ...data, id: data.job_id, status: 'pending', _apiKey: fullKey })
       clearApiKeyInput()
     } catch (err) {
@@ -167,20 +171,50 @@ export default function SendEmail() {
             <Field id="send-subject" label="Subject" placeholder="Hello from Sendr" value={form.subject} errorId={errorId} error={error} onChange={(value) => setForm((current) => ({ ...current, subject: value }))} />
 
             <div>
-              <label htmlFor="send-body" className="block text-xs mb-1.5" style={{ color: 'var(--muted)' }}>Body</label>
-              <textarea
-                id="send-body"
-                rows={4}
-                placeholder="Email body..."
-                value={form.body}
-                aria-invalid={Boolean(error)}
-                aria-describedby={errorId}
-                onChange={(e) => setForm((current) => ({ ...current, body: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none"
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                onFocus={(e) => { e.target.style.borderColor = 'var(--accent)' }}
-                onBlur={(e) => { e.target.style.borderColor = 'var(--border)' }}
-              />
+              <div className="flex items-center gap-2 mb-1.5">
+                <label className="block text-xs" style={{ color: 'var(--muted)' }}>Body</label>
+                <button
+                  type="button"
+                  onClick={() => setForm((current) => ({ ...current, bodyType: current.bodyType === 'text' ? 'html' : 'text' }))}
+                  className="text-xs px-2 py-0.5 rounded transition-colors"
+                  style={{
+                    background: 'var(--surface)',
+                    color: 'var(--accent)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  {form.bodyType === 'text' ? 'Switch to HTML' : 'Switch to Text'}
+                </button>
+              </div>
+              {form.bodyType === 'text' ? (
+                <textarea
+                  id="send-body"
+                  rows={4}
+                  placeholder="Email body..."
+                  value={form.textBody}
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={errorId}
+                  onChange={(e) => setForm((current) => ({ ...current, textBody: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none font-mono"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  onFocus={(e) => { e.target.style.borderColor = 'var(--accent)' }}
+                  onBlur={(e) => { e.target.style.borderColor = 'var(--border)' }}
+                />
+              ) : (
+                <textarea
+                  id="send-html-body"
+                  rows={4}
+                  placeholder={'<html><body><p>Hello!</p></body></html>'}
+                  value={form.htmlBody}
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={errorId}
+                  onChange={(e) => setForm((current) => ({ ...current, htmlBody: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none font-mono"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  onFocus={(e) => { e.target.style.borderColor = 'var(--accent)' }}
+                  onBlur={(e) => { e.target.style.borderColor = 'var(--border)' }}
+                />
+              )}
             </div>
 
             {error && (
@@ -189,7 +223,7 @@ export default function SendEmail() {
               </div>
             )}
 
-            <button type="submit" disabled={sending || !form.to || !form.subject || !form.body} className="w-full py-2.5 rounded-lg text-sm font-medium transition-opacity disabled:opacity-40" style={{ background: 'var(--accent)', color: '#000' }}>
+            <button type="submit" disabled={sending || !form.to || !form.subject || (!form.textBody && !form.htmlBody)} className="w-full py-2.5 rounded-lg text-sm font-medium transition-opacity disabled:opacity-40" style={{ background: 'var(--accent)', color: '#000' }}>
               {sending ? 'Queuing...' : 'Send email'}
             </button>
           </form>
