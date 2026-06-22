@@ -1,21 +1,25 @@
 package emailsender
 
-import "context"
+import (
+	"context"
+
+	"github.com/muhammedfazall/Sendr/internal/core/domain"
+)
 
 // MockSender captures sent emails in memory. Use in tests — no real HTTP calls.
 type MockSender struct {
-	Sent  []SentEmail
+	Sent  []*domain.EmailPayload
 	ErrFn func(to string) error // inject per-recipient errors
 }
 
-type SentEmail struct{ To, Subject, Body string }
-
-func (m *MockSender) Send(_ context.Context, to, subject, body string) error {
+func (m *MockSender) Send(_ context.Context, email *domain.EmailPayload) error {
 	if m.ErrFn != nil {
-		if err := m.ErrFn(to); err != nil {
-			return err
+		for _, to := range email.To {
+			if err := m.ErrFn(to); err != nil {
+				return err
+			}
 		}
 	}
-	m.Sent = append(m.Sent, SentEmail{to, subject, body})
+	m.Sent = append(m.Sent, email)
 	return nil
 }

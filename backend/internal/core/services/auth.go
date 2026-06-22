@@ -10,14 +10,15 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
 	"github.com/muhammedfazall/Sendr/pkg/config"
 	"github.com/muhammedfazall/Sendr/pkg/constants"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 )
 
-type authService struct {
+type AuthService struct {
 	users      ports.UserRepository
 	tokens     ports.TokenStore
 	cfg        *config.Config
@@ -25,7 +26,7 @@ type authService struct {
 }
 
 // NewAuthService wires up the auth service with its dependencies.
-func NewAuthService(users ports.UserRepository, tokens ports.TokenStore, cfg *config.Config) ports.AuthService {
+func NewAuthService(users ports.UserRepository, tokens ports.TokenStore, cfg *config.Config) *AuthService {
 	keyBytes, err := cfg.JWTPrivateKeyBytes()
 	if err != nil {
 		log.Fatalf("load private key: %v", err)
@@ -34,10 +35,10 @@ func NewAuthService(users ports.UserRepository, tokens ports.TokenStore, cfg *co
 	if err != nil {
 		log.Fatalf("parse private key: %v", err)
 	}
-	return &authService{users: users, tokens: tokens, cfg: cfg, privateKey: pk}
+	return &AuthService{users: users, tokens: tokens, cfg: cfg, privateKey: pk}
 }
 
-func (s *authService) oauthCfg() *oauth2.Config {
+func (s *AuthService) oauthCfg() *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     s.cfg.GoogleClientID,
 		ClientSecret: s.cfg.GoogleClientSecret,
@@ -47,13 +48,13 @@ func (s *authService) oauthCfg() *oauth2.Config {
 	}
 }
 
-func (s *authService) GetAuthURL(state string) string {
+func (s *AuthService) GetAuthURL(state string) string {
 	return s.oauthCfg().AuthCodeURL(state)
 }
 
 // HandleCallback exchanges the OAuth code, upserts the user, then returns
 // an access token (15 min) and a refresh token (7 days).
-func (s *authService) HandleCallback(ctx context.Context, code string) (string, string, error) {
+func (s *AuthService) HandleCallback(ctx context.Context, code string) (string, string, error) {
 	tok, err := s.oauthCfg().Exchange(ctx, code)
 	if err != nil {
 		return "", "", fmt.Errorf("token exchange: %w", err)
@@ -84,7 +85,7 @@ func (s *authService) HandleCallback(ctx context.Context, code string) (string, 
 
 // RefreshToken validates the existing refresh token, rotates it, and issues
 // a new access + refresh pair. The old refresh token is invalidated.
-func (s *authService) RefreshToken(ctx context.Context, userID, refreshTokenID string) (string, string, error) {
+func (s *AuthService) RefreshToken(ctx context.Context, userID, refreshTokenID string) (string, string, error) {
 	valid, err := s.tokens.Validate(ctx, userID, refreshTokenID)
 	if err != nil {
 		return "", "", fmt.Errorf("validate refresh token: %w", err)
@@ -103,7 +104,7 @@ func (s *authService) RefreshToken(ctx context.Context, userID, refreshTokenID s
 }
 
 // Logout deletes the refresh token from Redis and blacklists the current access token.
-func (s *authService) Logout(ctx context.Context, userID, accessTokenID string, accessTokenTTL time.Duration) error {
+func (s *AuthService) Logout(ctx context.Context, userID, accessTokenID string, accessTokenTTL time.Duration) error {
 	if err := s.tokens.Delete(ctx, userID); err != nil {
 		return fmt.Errorf("delete refresh token: %w", err)
 	}
@@ -115,7 +116,7 @@ func (s *authService) Logout(ctx context.Context, userID, accessTokenID string, 
 
 // issueTokenPair creates a new access JWT + refresh token and stores the
 // refresh token in Redis. Returns (accessToken, refreshToken, error).
-func (s *authService) issueTokenPair(ctx context.Context, userID, email string) (string, string, error) {
+func (s *AuthService) issueTokenPair(ctx context.Context, userID, email string) (string, string, error) {
 	accessToken, err := s.signJWT(userID, email)
 	if err != nil {
 		return "", "", fmt.Errorf("sign JWT: %w", err)
@@ -129,7 +130,7 @@ func (s *authService) issueTokenPair(ctx context.Context, userID, email string) 
 	return accessToken, refreshID, nil
 }
 
-func (s *authService) signJWT(userID, email string) (string, error) {
+func (s *AuthService) signJWT(userID, email string) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"user_id": userID,
 		"email":   email,

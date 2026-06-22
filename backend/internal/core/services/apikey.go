@@ -14,16 +14,16 @@ import (
 
 const maxAPIKeyCreateAttempts = 3
 
-type apiKeyService struct {
+type APIKeyService struct {
 	keys ports.APIKeyRepository
 	users ports.UserRepository
 }
 
-func NewApiKeyServices(keys ports.APIKeyRepository, users ports.UserRepository) ports.APIKeyService {
-	return &apiKeyService{keys: keys, users: users}
+func NewAPIKeyService(keys ports.APIKeyRepository, users ports.UserRepository) *APIKeyService {
+	return &APIKeyService{keys: keys, users: users}
 }
 
-func (s *apiKeyService) Create(ctx context.Context, userID, name string) (string, *domain.APIKey, error) {
+func (s *APIKeyService) Create(ctx context.Context, userID, name string) (string, *domain.APIKey, error) {
 	// Check plan limit
 	_, plan, err := s.users.FindWithPlan(ctx, userID)
 	if err != nil {
@@ -62,17 +62,17 @@ func (s *apiKeyService) Create(ctx context.Context, userID, name string) (string
 	return "", nil, fmt.Errorf("generate unique api key prefix")
 }
 
-func (s *apiKeyService) List(ctx context.Context, userID string) ([]domain.APIKey, error) {
+func (s *APIKeyService) List(ctx context.Context, userID string) ([]domain.APIKey, error) {
 	return s.keys.ListByUser(ctx, userID)
 }
 
-func (s *apiKeyService) Revoke(ctx context.Context, keyID, userID string) error {
+func (s *APIKeyService) Revoke(ctx context.Context, keyID, userID string) error {
 	return s.keys.Revoke(ctx, keyID, userID)
 }
 
 // Validate extracts prefix + secret from the full key, looks up the record,
 // then does a constant-time hash comparison to prevent timing attacks.
-func (s *apiKeyService) Validate(ctx context.Context, fullKey string) (*domain.APIKey, error) {
+func (s *APIKeyService) Validate(ctx context.Context, fullKey string) (*domain.APIKey, error) {
 	// Strip the "mk_live_" prefix, then split prefix.secret
 	trimmed := strings.TrimPrefix(fullKey, "mk_live_")
 	parts := strings.SplitN(trimmed, ".", 2)

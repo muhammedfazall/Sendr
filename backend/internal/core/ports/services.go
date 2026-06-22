@@ -40,7 +40,7 @@ type RateLimiter interface {
 
 // PaymentService handles Razorpay order creation, verification, and plan upgrades.
 type PaymentService interface {
-	CreateOrder(ctx context.Context, userID, planName string) (map[string]interface{}, error)
+	CreateOrder(ctx context.Context, userID, planName string) (map[string]any, error)
 	VerifyPayment(ctx context.Context, userID, orderID, paymentID, signature string) error
 	GetPlans(ctx context.Context) ([]domain.Plan, error)
 }

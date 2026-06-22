@@ -65,7 +65,7 @@ func TestWorkerProcessJobSuccess(t *testing.T) {
 
 	job := domain.Job{
 		ID: "job-1", UserID: "user-1", Status: "pending",
-		Payload: domain.EmailPayload{To: "a@test.com", Subject: "S", Body: "B"},
+		Payload: domain.EmailPayload{To: []string{"a@test.com"}, Subject: "S", TextBody: "B"},
 	}
 
 	w.processJob(context.Background(), job)
@@ -82,8 +82,8 @@ func TestWorkerProcessJobSuccess(t *testing.T) {
 	if len(sender.Sent) != 1 {
 		t.Fatalf("expected 1 sent email, got %d", len(sender.Sent))
 	}
-	if sender.Sent[0].To != "a@test.com" {
-		t.Fatalf("expected to 'a@test.com', got %q", sender.Sent[0].To)
+	if len(sender.Sent[0].To) != 1 || sender.Sent[0].To[0] != "a@test.com" {
+		t.Fatalf("expected to 'a@test.com', got %v", sender.Sent[0].To)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestWorkerProcessJobNonRetryableError(t *testing.T) {
 
 	job := domain.Job{
 		ID: "job-2", UserID: "user-1", Status: "pending", Retries: 0, MaxRetries: 3,
-		Payload: domain.EmailPayload{To: "bad-email", Subject: "S", Body: "B"},
+		Payload: domain.EmailPayload{To: []string{"bad-email"}, Subject: "S", TextBody: "B"},
 	}
 
 	w.processJob(context.Background(), job)
@@ -127,7 +127,7 @@ func TestWorkerProcessJobRetryableError(t *testing.T) {
 
 	job := domain.Job{
 		ID: "job-3", UserID: "user-1", Status: "pending", Retries: 0, MaxRetries: 3,
-		Payload: domain.EmailPayload{To: "a@test.com", Subject: "S", Body: "B"},
+		Payload: domain.EmailPayload{To: []string{"a@test.com"}, Subject: "S", TextBody: "B"},
 	}
 
 	w.processJob(context.Background(), job)
@@ -160,7 +160,7 @@ func TestWorkerProcessJobRetryExhausted(t *testing.T) {
 	// so one more try is allowed (retries < MaxRetries-1 → 2 < 2 → false)
 	job := domain.Job{
 		ID: "job-4", UserID: "user-1", Status: "pending", Retries: 2, MaxRetries: 3,
-		Payload: domain.EmailPayload{To: "a@test.com", Subject: "S", Body: "B"},
+		Payload: domain.EmailPayload{To: []string{"a@test.com"}, Subject: "S", TextBody: "B"},
 	}
 
 	w.processJob(context.Background(), job)
@@ -186,7 +186,7 @@ func TestWorkerProcessJobLastRetry(t *testing.T) {
 	// retries = 1, MaxRetries = 3 — one more retry allowed
 	job := domain.Job{
 		ID: "job-5", UserID: "user-1", Status: "pending", Retries: 1, MaxRetries: 3,
-		Payload: domain.EmailPayload{To: "a@test.com", Subject: "S", Body: "B"},
+		Payload: domain.EmailPayload{To: []string{"a@test.com"}, Subject: "S", TextBody: "B"},
 	}
 
 	w.processJob(context.Background(), job)
@@ -216,7 +216,7 @@ func TestWorkerProcessJobBackoffScheduleBoundary(t *testing.T) {
 	// retries = 0 → backoffSchedule[0] = 10s
 	job := domain.Job{
 		ID: "job-6", UserID: "user-1", Status: "pending", Retries: 0, MaxRetries: 5,
-		Payload: domain.EmailPayload{To: "a@test.com", Subject: "S", Body: "B"},
+		Payload: domain.EmailPayload{To: []string{"a@test.com"}, Subject: "S", TextBody: "B"},
 	}
 
 	w.processJob(context.Background(), job)
@@ -240,7 +240,7 @@ func TestWorkerProcessJobMarkDoneError(t *testing.T) {
 
 	job := domain.Job{
 		ID: "job-7", UserID: "user-1",
-		Payload: domain.EmailPayload{To: "a@test.com", Subject: "S", Body: "B"},
+		Payload: domain.EmailPayload{To: []string{"a@test.com"}, Subject: "S", TextBody: "B"},
 	}
 
 	// Should not panic

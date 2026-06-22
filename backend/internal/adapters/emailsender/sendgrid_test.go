@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/muhammedfazall/Sendr/internal/core/domain"
 )
 
 func TestIsRetryableWrapsRetryableError(t *testing.T) {
@@ -72,11 +74,15 @@ func TestNewSendGridHTTPClient(t *testing.T) {
 func TestMockSender(t *testing.T) {
 	sender := &MockSender{}
 
-	err := sender.Send(context.Background(), "a@test.com", "Subject A", "Body A")
+	err := sender.Send(context.Background(), &domain.EmailPayload{
+		To: []string{"a@test.com"}, Subject: "Subject A", TextBody: "Body A",
+	})
 	if err != nil {
 		t.Fatalf("mock Send: %v", err)
 	}
-	err = sender.Send(context.Background(), "b@test.com", "Subject B", "Body B")
+	err = sender.Send(context.Background(), &domain.EmailPayload{
+		To: []string{"b@test.com"}, Subject: "Subject B", TextBody: "Body B",
+	})
 	if err != nil {
 		t.Fatalf("mock Send: %v", err)
 	}
@@ -84,10 +90,10 @@ func TestMockSender(t *testing.T) {
 	if len(sender.Sent) != 2 {
 		t.Fatalf("expected 2 sent emails, got %d", len(sender.Sent))
 	}
-	if sender.Sent[0].To != "a@test.com" || sender.Sent[0].Subject != "Subject A" {
+	if len(sender.Sent[0].To) != 1 || sender.Sent[0].To[0] != "a@test.com" || sender.Sent[0].Subject != "Subject A" {
 		t.Fatalf("unexpected first email: %+v", sender.Sent[0])
 	}
-	if sender.Sent[1].To != "b@test.com" || sender.Sent[1].Body != "Body B" {
+	if len(sender.Sent[1].To) != 1 || sender.Sent[1].To[0] != "b@test.com" || sender.Sent[1].TextBody != "Body B" {
 		t.Fatalf("unexpected second email: %+v", sender.Sent[1])
 	}
 }
@@ -102,12 +108,16 @@ func TestMockSenderWithErrorFn(t *testing.T) {
 		},
 	}
 
-	err := sender.Send(context.Background(), "ok@test.com", "S", "B")
+	err := sender.Send(context.Background(), &domain.EmailPayload{
+		To: []string{"ok@test.com"}, Subject: "S", TextBody: "B",
+	})
 	if err != nil {
 		t.Fatalf("expected no error for ok@test.com, got %v", err)
 	}
 
-	err = sender.Send(context.Background(), "fail@test.com", "S", "B")
+	err = sender.Send(context.Background(), &domain.EmailPayload{
+		To: []string{"fail@test.com"}, Subject: "S", TextBody: "B",
+	})
 	if err == nil {
 		t.Fatal("expected error for fail@test.com, got nil")
 	}
