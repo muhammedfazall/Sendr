@@ -24,6 +24,8 @@ func (m *mockEmailSvc) Send(ctx context.Context, fullKey string, payload domain.
 	return m.sendFn(ctx, fullKey, payload)
 }
 
+
+
 type mockJobReader struct {
 	getByIDFn     func(ctx context.Context, jobID string) (*domain.Job, error)
 	listByUserFn  func(ctx context.Context, userID, status string, limit, offset int) ([]domain.Job, error)
@@ -58,7 +60,7 @@ func TestSendSuccess(t *testing.T) {
 	}
 	h := New(email, &mockJobReader{})
 
-	body := `{"to":"a@b.com","subject":"Hello","body":"World"}`
+	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
@@ -89,7 +91,7 @@ func TestSendInvalidBody(t *testing.T) {
 func TestSendMissingFields(t *testing.T) {
 	h := New(&mockEmailSvc{}, &mockJobReader{})
 
-	body := `{"to":"","subject":"","body":""}`
+	body := `{"to":[],"subject":"","text_body":""}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
@@ -105,7 +107,7 @@ func TestSendMissingFields(t *testing.T) {
 func TestSendSubjectTooLong(t *testing.T) {
 	h := New(&mockEmailSvc{}, &mockJobReader{})
 
-	body := `{"to":"a@b.com","subject":"` + strings.Repeat("A", 999) + `","body":"World"}`
+	body := `{"to":["a@b.com"],"subject":"` + strings.Repeat("A", 999) + `","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
@@ -121,7 +123,7 @@ func TestSendSubjectTooLong(t *testing.T) {
 func TestSendBodyTooLong(t *testing.T) {
 	h := New(&mockEmailSvc{}, &mockJobReader{})
 
-	body := `{"to":"a@b.com","subject":"Hi","body":"` + strings.Repeat("B", 50001) + `"}`
+	body := `{"to":["a@b.com"],"subject":"Hi","text_body":"` + strings.Repeat("B", 50001) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
@@ -137,23 +139,7 @@ func TestSendBodyTooLong(t *testing.T) {
 func TestSendInvalidEmail(t *testing.T) {
 	h := New(&mockEmailSvc{}, &mockJobReader{})
 
-	body := `{"to":"not-an-email","subject":"Hi","body":"World"}`
-	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
-	w := httptest.NewRecorder()
-
-	h.Send().ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", w.Code)
-	}
-}
-
-func TestSendHTMLNotSupported(t *testing.T) {
-	h := New(&mockEmailSvc{}, &mockJobReader{})
-
-	body := `{"to":"a@b.com","subject":"Hi","body":"World","html":true}`
+	body := `{"to":["not-an-email"],"subject":"Hi","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
@@ -174,7 +160,7 @@ func TestSendRateLimited(t *testing.T) {
 	}
 	h := New(email, &mockJobReader{})
 
-	body := `{"to":"a@b.com","subject":"Hello","body":"World"}`
+	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
@@ -198,7 +184,7 @@ func TestSendInvalidAPIKey(t *testing.T) {
 	}
 	h := New(email, &mockJobReader{})
 
-	body := `{"to":"a@b.com","subject":"Hello","body":"World"}`
+	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
@@ -219,7 +205,7 @@ func TestSendAPIKeyRevoked(t *testing.T) {
 	}
 	h := New(email, &mockJobReader{})
 
-	body := `{"to":"a@b.com","subject":"Hello","body":"World"}`
+	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
@@ -240,7 +226,7 @@ func TestSendAPIKeyNotFound(t *testing.T) {
 	}
 	h := New(email, &mockJobReader{})
 
-	body := `{"to":"a@b.com","subject":"Hello","body":"World"}`
+	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
@@ -261,7 +247,7 @@ func TestSendUserNotFound(t *testing.T) {
 	}
 	h := New(email, &mockJobReader{})
 
-	body := `{"to":"a@b.com","subject":"Hello","body":"World"}`
+	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
@@ -282,7 +268,7 @@ func TestSendGenericError(t *testing.T) {
 	}
 	h := New(email, &mockJobReader{})
 
-	body := `{"to":"a@b.com","subject":"Hello","body":"World"}`
+	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")
@@ -298,7 +284,7 @@ func TestSendGenericError(t *testing.T) {
 func TestSendWhitespaceOnlySubject(t *testing.T) {
 	h := New(&mockEmailSvc{}, &mockJobReader{})
 
-	body := `{"to":"a@b.com","subject":"   ","body":"World"}`
+	body := `{"to":["a@b.com"],"subject":"   ","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer mk_live_test.secret")

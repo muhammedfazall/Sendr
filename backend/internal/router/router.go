@@ -7,6 +7,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+
 	"github.com/muhammedfazall/Sendr/internal/adapters/apikeyrepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/jobrepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/paymentrepo"
@@ -24,7 +26,6 @@ import (
 	"github.com/muhammedfazall/Sendr/internal/health"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
 	"github.com/muhammedfazall/Sendr/pkg/config"
-	"github.com/redis/go-redis/v9"
 )
 
 func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
@@ -48,7 +49,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 
 	// Core services
 	authSvc := services.NewAuthService(userRepo, tokenStore, cfg)
-	apiKeySvc := services.NewApiKeyServices(keyRepo, userRepo)
+	apiKeySvc := services.NewAPIKeyService(keyRepo, userRepo)
 	emailSvc := services.NewEmailService(apiKeySvc, jobRepo, userRepo, limiter)
 	paymentSvc := services.NewPaymentService(paymentRepo, planRepo, userRepo, cfg)
 

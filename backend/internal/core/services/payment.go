@@ -7,14 +7,15 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	razorpay "github.com/razorpay/razorpay-go"
+
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
 	"github.com/muhammedfazall/Sendr/pkg/config"
 	"github.com/muhammedfazall/Sendr/pkg/constants"
-	razorpay "github.com/razorpay/razorpay-go"
 )
 
-type paymentService struct {
+type PaymentService struct {
 	payments ports.PaymentRepository
 	plans    ports.PlanRepository
 	users    ports.UserRepository
@@ -27,9 +28,9 @@ func NewPaymentService(
 	plans ports.PlanRepository,
 	users ports.UserRepository,
 	cfg *config.Config,
-) ports.PaymentService {
+) *PaymentService {
 	client := razorpay.NewClient(cfg.RazorpayKeyID, cfg.RazorpayKeySecret)
-	return &paymentService{
+	return &PaymentService{
 		payments: payments,
 		plans:    plans,
 		users:    users,
@@ -39,7 +40,7 @@ func NewPaymentService(
 }
 
 // CreateOrder creates a Razorpay order and stores it in the DB.
-func (s *paymentService) CreateOrder(ctx context.Context, userID, planName string) (map[string]interface{}, error) {
+func (s *PaymentService) CreateOrder(ctx context.Context, userID, planName string) (map[string]any, error) {
 	// 1. Validate: can't "buy" free plan
 	if planName == "free" {
 		return nil, fmt.Errorf("cannot purchase the free plan")
@@ -64,11 +65,11 @@ func (s *paymentService) CreateOrder(ctx context.Context, userID, planName strin
 	}
 
 	// 4. Create Razorpay order
-	orderData := map[string]interface{}{
+	orderData := map[string]any{
 		"amount":   plan.PricePaise,
 		"currency": "INR",
 		"receipt":  fmt.Sprintf("sendr_%s_%s", userID[:8], planName),
-		"notes": map[string]interface{}{
+		"notes": map[string]any{
 			"user_id":   userID,
 			"plan_name": planName,
 		},
@@ -95,7 +96,7 @@ func (s *paymentService) CreateOrder(ctx context.Context, userID, planName strin
 	}
 
 	// 6. Return data the frontend needs to open Razorpay Checkout
-	return map[string]interface{}{
+	return map[string]any{
 		"order_id": orderID,
 		"amount":   plan.PricePaise,
 		"currency": "INR",
@@ -104,7 +105,7 @@ func (s *paymentService) CreateOrder(ctx context.Context, userID, planName strin
 }
 
 // VerifyPayment verifies the Razorpay signature and upgrades the user's plan.
-func (s *paymentService) VerifyPayment(ctx context.Context, userID, orderID, paymentID, signature string) error {
+func (s *PaymentService) VerifyPayment(ctx context.Context, userID, orderID, paymentID, signature string) error {
 	// 1. Verify signature: HMAC-SHA256(order_id + "|" + payment_id, secret)
 	message := orderID + "|" + paymentID
 	mac := hmac.New(sha256.New, []byte(s.cfg.RazorpayKeySecret))
@@ -152,6 +153,6 @@ func (s *paymentService) VerifyPayment(ctx context.Context, userID, orderID, pay
 }
 
 // GetPlans returns all available plans.
-func (s *paymentService) GetPlans(ctx context.Context) ([]domain.Plan, error) {
+func (s *PaymentService) GetPlans(ctx context.Context) ([]domain.Plan, error) {
 	return s.plans.ListAll(ctx)
 }

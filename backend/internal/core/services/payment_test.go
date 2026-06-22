@@ -21,8 +21,8 @@ func testCfg() *config.Config {
 	}
 }
 
-func newTestPaymentService(m *mockDeps, cfg *config.Config) *paymentService {
-	return &paymentService{
+func newTestPaymentService(m *mockDeps, cfg *config.Config) *PaymentService {
+	return &PaymentService{
 		payments: m.payments,
 		plans:    m.plans,
 		users:    m.users,

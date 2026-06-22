@@ -10,7 +10,7 @@ import (
 
 func TestAPIKeyServiceCreate(t *testing.T) {
 	mock := newMockDeps()
-	svc := NewApiKeyServices(mock.apikeys, mock.users)
+	svc := NewAPIKeyService(mock.apikeys, mock.users)
 
 	user := mock.addUserWithPlan("free")
 	fullKey, key, err := svc.Create(context.Background(), user.ID, "my-key")
@@ -29,7 +29,7 @@ func TestAPIKeyServiceCreate(t *testing.T) {
 
 func TestAPIKeyServiceCreateExceedsPlanLimit(t *testing.T) {
 	mock := newMockDeps()
-	svc := NewApiKeyServices(mock.apikeys, mock.users)
+	svc := NewAPIKeyService(mock.apikeys, mock.users)
 
 	user := mock.addUserWithPlan("free") // MaxAPIKeys = 1
 
@@ -51,7 +51,7 @@ func TestAPIKeyServiceCreateExceedsPlanLimit(t *testing.T) {
 
 func TestAPIKeyServiceCreateUnlimitedPlan(t *testing.T) {
 	mock := newMockDeps()
-	svc := NewApiKeyServices(mock.apikeys, mock.users)
+	svc := NewAPIKeyService(mock.apikeys, mock.users)
 
 	user := mock.addUserWithPlan("max") // MaxAPIKeys = -1 (unlimited)
 
@@ -65,7 +65,7 @@ func TestAPIKeyServiceCreateUnlimitedPlan(t *testing.T) {
 
 func TestAPIKeyServiceList(t *testing.T) {
 	mock := newMockDeps()
-	svc := NewApiKeyServices(mock.apikeys, mock.users)
+	svc := NewAPIKeyService(mock.apikeys, mock.users)
 
 	user := mock.addUserWithPlan("max")
 
@@ -89,7 +89,7 @@ func TestAPIKeyServiceList(t *testing.T) {
 
 func TestAPIKeyServiceRevoke(t *testing.T) {
 	mock := newMockDeps()
-	svc := NewApiKeyServices(mock.apikeys, mock.users)
+	svc := NewAPIKeyService(mock.apikeys, mock.users)
 
 	user := mock.addUserWithPlan("max")
 	_, key, err := svc.Create(context.Background(), user.ID, "to-revoke")
@@ -110,7 +110,7 @@ func TestAPIKeyServiceRevoke(t *testing.T) {
 
 func TestAPIKeyServiceRevokeWrongUser(t *testing.T) {
 	mock := newMockDeps()
-	svc := NewApiKeyServices(mock.apikeys, mock.users)
+	svc := NewAPIKeyService(mock.apikeys, mock.users)
 
 	user1 := mock.addUserWithPlan("max")
 	user2 := &domain.User{ID: "user-different", Email: "other@test.com", Name: "Other"}
@@ -129,7 +129,7 @@ func TestAPIKeyServiceRevokeWrongUser(t *testing.T) {
 
 func TestAPIKeyServiceValidate(t *testing.T) {
 	mock := newMockDeps()
-	svc := NewApiKeyServices(mock.apikeys, mock.users)
+	svc := NewAPIKeyService(mock.apikeys, mock.users)
 
 	user := mock.addUserWithPlan("free")
 	fullKey, _, err := svc.Create(context.Background(), user.ID, "test")
@@ -148,7 +148,7 @@ func TestAPIKeyServiceValidate(t *testing.T) {
 
 func TestAPIKeyServiceValidateInvalidFormat(t *testing.T) {
 	mock := newMockDeps()
-	svc := NewApiKeyServices(mock.apikeys, mock.users)
+	svc := NewAPIKeyService(mock.apikeys, mock.users)
 
 	_, err := svc.Validate(context.Background(), "invalid-key-format")
 	if err == nil {
@@ -158,7 +158,7 @@ func TestAPIKeyServiceValidateInvalidFormat(t *testing.T) {
 
 func TestAPIKeyServiceValidateRevokedKey(t *testing.T) {
 	mock := newMockDeps()
-	svc := NewApiKeyServices(mock.apikeys, mock.users)
+	svc := NewAPIKeyService(mock.apikeys, mock.users)
 
 	user := mock.addUserWithPlan("free")
 	fullKey, key, err := svc.Create(context.Background(), user.ID, "test")

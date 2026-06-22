@@ -21,8 +21,8 @@ func testKeyPair(t *testing.T) *rsa.PrivateKey {
 	return key
 }
 
-func newTestAuthService(m *mockDeps, cfg *config.Config, pk *rsa.PrivateKey) *authService {
-	return &authService{
+func newTestAuthService(m *mockDeps, cfg *config.Config, pk *rsa.PrivateKey) *AuthService {
+	return &AuthService{
 		users:      m.users,
 		tokens:     m.tokens,
 		cfg:        cfg,

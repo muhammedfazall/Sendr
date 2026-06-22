@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+)
 
 // User is the authenticated principal.
 type User struct {
@@ -50,12 +54,88 @@ type Job struct {
 	UpdatedAt   time.Time    `json:"updated_at"`
 }
 
+// EmailAddress represents a named email contact.
+type EmailAddress struct {
+	Email string `json:"email"`
+	Name  string `json:"name,omitempty"`
+}
+
+// Attachment holds a file to include with the email.
+type Attachment struct {
+	Filename    string `json:"filename"`
+	Content     string `json:"content"` // base64-encoded
+	ContentType string `json:"content_type"`
+}
+
 // EmailPayload is the data needed to send a single email.
 type EmailPayload struct {
-	To      string `json:"to"`
-	Subject string `json:"subject"`
-	Body    string `json:"body"`
-	HTML    bool   `json:"html"`
+	From        *EmailAddress    `json:"from,omitempty"`
+	To          []string         `json:"to"`
+	CC          []string         `json:"cc,omitempty"`
+	BCC         []string         `json:"bcc,omitempty"`
+	Subject     string           `json:"subject"`
+	TextBody    string           `json:"text_body,omitempty"`
+	HTMLBody    string           `json:"html_body,omitempty"`
+	Attachments []Attachment     `json:"attachments,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
+	Tags        map[string]string `json:"tags,omitempty"`
+}
+
+// UnmarshalJSON handles backward-compat with the legacy single-string
+// "to" field and "body"/"html" fields used by previously queued jobs.
+func (p *EmailPayload) UnmarshalJSON(data []byte) error {
+	type alias struct {
+		From        *EmailAddress    `json:"from,omitempty"`
+		To          any              `json:"to"`
+		CC          []string         `json:"cc,omitempty"`
+		BCC         []string         `json:"bcc,omitempty"`
+		Subject     string           `json:"subject"`
+		TextBody    string           `json:"text_body,omitempty"`
+		HTMLBody    string           `json:"html_body,omitempty"`
+		Body        string           `json:"body,omitempty"`
+		HTML        bool             `json:"html,omitempty"`
+		Attachments []Attachment     `json:"attachments,omitempty"`
+		Headers     map[string]string `json:"headers,omitempty"`
+		Tags        map[string]string `json:"tags,omitempty"`
+	}
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return fmt.Errorf("email payload: %w", err)
+	}
+
+	p.From = a.From
+	p.CC = a.CC
+	p.BCC = a.BCC
+	p.Subject = a.Subject
+	p.TextBody = a.TextBody
+	p.HTMLBody = a.HTMLBody
+	p.Attachments = a.Attachments
+	p.Headers = a.Headers
+	p.Tags = a.Tags
+
+	// Handle "to" as either a string or []string
+	switch v := a.To.(type) {
+	case string:
+		if v != "" {
+			p.To = []string{v}
+		}
+	case []any:
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				p.To = append(p.To, s)
+			}
+		}
+	}
+
+	// Handle legacy "body" -> TextBody / HTMLBody mapping
+	if a.Body != "" && a.TextBody == "" {
+		p.TextBody = a.Body
+	}
+	if a.HTML && a.HTMLBody == "" {
+		p.HTMLBody = a.Body
+	}
+
+	return nil
 }
 
 // Payment tracks a Razorpay payment for a plan upgrade.

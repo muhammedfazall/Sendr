@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/mail"
 	"strconv"
@@ -60,9 +61,15 @@ func (h *Handler) Send() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON")
 			return
 		}
-		if payload.To == "" || payload.Subject == "" || payload.Body == "" {
-			response.Error(w, http.StatusBadRequest, "missing_fields", "to, subject and body are required")
+		if len(payload.To) == 0 {
+			response.Error(w, http.StatusBadRequest, "missing_fields", "to is required")
 			return
+		}
+		for _, addr := range payload.To {
+			if _, err := mail.ParseAddress(addr); err != nil {
+				response.Error(w, http.StatusBadRequest, "invalid_email", fmt.Sprintf("invalid recipient: %s", addr))
+				return
+			}
 		}
 		payload.Subject = strings.TrimSpace(payload.Subject)
 		if payload.Subject == "" {
@@ -73,16 +80,16 @@ func (h *Handler) Send() http.HandlerFunc {
 			response.Error(w, http.StatusBadRequest, "subject_too_large", "subject must be under 998 characters")
 			return
 		}
-		if _, err := mail.ParseAddress(payload.To); err != nil {
-			response.Error(w, http.StatusBadRequest, "invalid_email", "to is not a valid email address")
+		if payload.TextBody == "" && payload.HTMLBody == "" {
+			response.Error(w, http.StatusBadRequest, "missing_fields", "text_body or html_body is required")
 			return
 		}
-		if len(payload.Body) > maxBodyLength {
-			response.Error(w, http.StatusBadRequest, "body_too_large", "body must be under 50KB")
+		if len(payload.TextBody) > maxBodyLength {
+			response.Error(w, http.StatusBadRequest, "body_too_large", "text_body must be under 50KB")
 			return
 		}
-		if payload.HTML {
-			response.Error(w, http.StatusBadRequest, "html_not_supported", "HTML email is not supported yet")
+		if len(payload.HTMLBody) > maxBodyLength {
+			response.Error(w, http.StatusBadRequest, "body_too_large", "html_body must be under 50KB")
 			return
 		}
 

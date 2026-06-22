@@ -94,7 +94,7 @@ func (w *Worker) Run(ctx context.Context) {
 func (w *Worker) processJob(ctx context.Context, j domain.Job) {
 	log := w.log.With("job_id", j.ID, "to", j.Payload.To)
 
-	err := w.sender.Send(ctx, j.Payload.To, j.Payload.Subject, j.Payload.Body)
+	err := w.sender.Send(ctx, &j.Payload)
 	if err == nil {
 		if markErr := w.repo.MarkDone(ctx, j.ID); markErr != nil {
 			log.Error("mark done failed", "err", markErr)

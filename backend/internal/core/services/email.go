@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 
+
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
 	"github.com/muhammedfazall/Sendr/pkg/constants"
 )
 
-type emailService struct {
+type EmailService struct {
 	apiKeys     ports.APIKeyService
 	jobs        ports.JobRepository
 	users       ports.UserRepository
@@ -22,8 +23,8 @@ func NewEmailService(
 	jobs ports.JobRepository,
 	users ports.UserRepository,
 	rateLimiter ports.RateLimiter,
-) ports.EmailService {
-	return &emailService{
+) *EmailService {
+	return &EmailService{
 		apiKeys:     apiKeys,
 		jobs:        jobs,
 		users:       users,
@@ -36,7 +37,7 @@ func NewEmailService(
 //  2. Load user + plan to get daily limit
 //  3. Check + increment Redis rate limit
 //  4. Enqueue job in Postgres
-func (s *emailService) Send(ctx context.Context, fullKey string, payload domain.EmailPayload) (*domain.Job, error) {
+func (s *EmailService) Send(ctx context.Context, fullKey string, payload domain.EmailPayload) (*domain.Job, error) {
 // Step 1 — validate key, get owning user
 key, err := s.apiKeys.Validate(ctx, fullKey)
 if err != nil {
