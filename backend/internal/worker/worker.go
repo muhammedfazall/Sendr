@@ -9,6 +9,11 @@ import (
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 )
 
+// eventBus defines the publish side of the event bus the worker needs.
+type eventBus interface {
+	Publish(event domain.Event)
+}
+
 // jobRepository defines the repo methods the worker needs.
 type jobRepository interface {
 	MarkDone(ctx context.Context, jobID string) error
@@ -30,11 +35,12 @@ var backoffSchedule = []time.Duration{
 type Worker struct {
 	repo   jobRepository
 	sender emailsender.Sender
+	bus    eventBus
 	log    *slog.Logger
 }
 
-func New(repo jobRepository, sender emailsender.Sender, log *slog.Logger) *Worker {
-	return &Worker{repo: repo, sender: sender, log: log}
+func New(repo jobRepository, sender emailsender.Sender, bus eventBus, log *slog.Logger) *Worker {
+	return &Worker{repo: repo, sender: sender, bus: bus, log: log}
 }
 
 // Run starts the poll loop and blocks until ctx is cancelled.
@@ -96,6 +102,7 @@ func (w *Worker) processJob(ctx context.Context, j domain.Job) {
 
 	err := w.sender.Send(ctx, &j.Payload)
 	if err == nil {
+		w.publish(domain.EventEmailSent, j)
 		if markErr := w.repo.MarkDone(ctx, j.ID); markErr != nil {
 			log.Error("mark done failed", "err", markErr)
 		} else {
@@ -105,6 +112,8 @@ func (w *Worker) processJob(ctx context.Context, j domain.Job) {
 	}
 
 	log.Warn("send failed", "err", err, "retries", j.Retries)
+
+	w.publish(domain.EventEmailFailed, j)
 
 	// Non-retryable error OR retries exhausted → straight to DLQ
 	if !emailsender.IsRetryable(err) || j.Retries >= j.MaxRetries-1 {
@@ -128,4 +137,12 @@ func (w *Worker) processJob(ctx context.Context, j domain.Job) {
 	} else {
 		log.Info("scheduled retry", "backoff", backoff, "attempt", j.Retries+1)
 	}
+}
+
+// publish sends an event to the bus if one is configured.
+func (w *Worker) publish(typ domain.EventType, j domain.Job) {
+	if w.bus == nil {
+		return
+	}
+	w.bus.Publish(domain.NewEvent(typ, j))
 }
