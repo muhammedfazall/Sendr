@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/muhammedfazall/Sendr/internal/adapters/emailsender"
+	"github.com/muhammedfazall/Sendr/internal/adapters/eventbus"
 	"github.com/muhammedfazall/Sendr/internal/adapters/jobrepo"
 	"github.com/muhammedfazall/Sendr/internal/router"
 	"github.com/muhammedfazall/Sendr/internal/worker"
@@ -26,6 +27,7 @@ type App struct {
 	pool   *pgxpool.Pool
 	rdb    *redis.Client
 	server *http.Server
+	bus    *eventbus.Bus
 	worker *worker.Worker
 	logger *slog.Logger
 }
@@ -51,6 +53,7 @@ func New() (*App, error) {
 		cfg:    cfg,
 		pool:   pool,
 		rdb:    rdb,
+		bus:    eventbus.New(64),
 		logger: slog.New(slog.NewJSONHandler(os.Stdout, nil)),
 	}, nil
 }
@@ -71,9 +74,13 @@ func (a *App) Run() error {
 }
 
 func (a *App) startWorker(ctx context.Context) error {
-	sender := emailsender.NewSendGrid(a.cfg.SendGridKey, a.cfg.FromEmail, a.cfg.FromName)
+	sender, err := emailsender.NewSender(a.cfg)
+	if err != nil {
+		return fmt.Errorf("create email sender: %w", err)
+	}
 	jobRepo := jobrepo.New(a.pool)
-	a.worker = worker.New(jobRepo, sender, a.logger)
+	a.worker = worker.New(jobRepo, sender, a.bus, a.logger, a.cfg.BackendURL, a.cfg.UnsubscribeSecret)
+	go a.bus.Run(ctx)
 	go a.worker.Run(ctx)
 	log.Println("worker started")
 	return nil

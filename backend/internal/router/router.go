@@ -10,11 +10,14 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/muhammedfazall/Sendr/internal/adapters/apikeyrepo"
+	"github.com/muhammedfazall/Sendr/internal/adapters/emaileventrepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/jobrepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/paymentrepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/planrepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/ratelimit"
+	"github.com/muhammedfazall/Sendr/internal/adapters/templaterepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/tokenstore"
+	"github.com/muhammedfazall/Sendr/internal/adapters/unsubrepo"
 	"github.com/muhammedfazall/Sendr/internal/adapters/userrepo"
 	"github.com/muhammedfazall/Sendr/internal/core/services"
 	"github.com/muhammedfazall/Sendr/internal/handlers/apikeyhandler"
@@ -22,6 +25,8 @@ import (
 	"github.com/muhammedfazall/Sendr/internal/handlers/emailhandler"
 	"github.com/muhammedfazall/Sendr/internal/handlers/mehandler"
 	"github.com/muhammedfazall/Sendr/internal/handlers/paymenthandler"
+	"github.com/muhammedfazall/Sendr/internal/handlers/templatehandler"
+	"github.com/muhammedfazall/Sendr/internal/handlers/unsubhandler"
 	"github.com/muhammedfazall/Sendr/internal/handlers/webhookhandler"
 	"github.com/muhammedfazall/Sendr/internal/health"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
@@ -46,26 +51,34 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	tokenStore := tokenstore.New(rdb)
 	paymentRepo := paymentrepo.New(pool)
 	planRepo := planrepo.New(pool)
+	emailEventRepo := emaileventrepo.New(pool)
+	templateRepo := templaterepo.New(pool)
+	unsubRepo := unsubrepo.New(pool)
 
 	// Core services
 	authSvc := services.NewAuthService(userRepo, tokenStore, cfg)
 	apiKeySvc := services.NewAPIKeyService(keyRepo, userRepo)
 	emailSvc := services.NewEmailService(apiKeySvc, jobRepo, userRepo, limiter)
 	paymentSvc := services.NewPaymentService(paymentRepo, planRepo, userRepo, cfg)
+	templateSvc := services.NewTemplateService(templateRepo)
 
 	// Handlers
 	authH := authhandler.New(authSvc, cfg)
 	apikeyH := apikeyhandler.New(apiKeySvc)
-	emailH := emailhandler.New(emailSvc, jobRepo)
+	emailH := emailhandler.New(emailSvc, jobRepo, emailEventRepo, templateSvc)
 	meH := mehandler.New(userRepo, limiter)
 	healthH := health.NewHandler(health.NewService(pool, rdb))
 	paymentH := paymenthandler.New(paymentSvc)
 	webhookH := webhookhandler.New(paymentRepo, userRepo, cfg)
+	sgWebhookH := webhookhandler.NewSendGridHandler(emailEventRepo, jobRepo)
+	templateH := templatehandler.New(templateRepo)
+	unsubH := unsubhandler.New(unsubRepo, cfg.UnsubscribeSecret)
 
 	// Routes
 	r.Get("/health", healthH.Check())
 	r.Get("/plans", paymentH.ListPlans())
 	r.Post("/webhooks/razorpay", webhookH.Handle())
+	r.Post("/webhooks/sendgrid", sgWebhookH.Handle())
 
 	// Auth routes — rate-limited to prevent abuse.
 	r.Group(func(r chi.Router) {
@@ -85,12 +98,24 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	r.With(jwtMW).Get("/apikeys", apikeyH.List())
 	r.With(jwtMW).Delete("/apikeys/{id}", apikeyH.Revoke())
 	r.With(jwtMW).Get("/emails", emailH.List())
+	r.With(jwtMW).Get("/emails/stats", emailH.Stats())
 	r.With(jwtMW).Post("/payments/orders", paymentH.CreateOrder())
 	r.With(jwtMW).Post("/payments/verify", paymentH.VerifyPayment())
 
 	apiKey := middleware.ValidateAPIKey(pool)
 	r.With(apiKey).Post("/emails/send", emailH.Send())
 	r.With(apiKey).Get("/emails/{id}", emailH.GetJob())
+
+	// Unsubscribe — no auth required; the token in the query string is the proof.
+	r.Get("/unsubscribe", unsubH.ServeHTTP)
+	r.Post("/unsubscribe", unsubH.ServeHTTP)
+
+	// Template CRUD — JWT required.
+	r.With(jwtMW).Post("/templates", templateH.Create())
+	r.With(jwtMW).Get("/templates", templateH.List())
+	r.With(jwtMW).Get("/templates/{id}", templateH.Get())
+	r.With(jwtMW).Patch("/templates/{id}", templateH.Update())
+	r.With(jwtMW).Delete("/templates/{id}", templateH.Delete())
 
 	return r
 }

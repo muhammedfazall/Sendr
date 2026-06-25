@@ -209,3 +209,28 @@ func (r *PostgresJobRepository) ListByUser(ctx context.Context, userID, status s
 	return jobs, rows.Err()
 }
 
+// SetProviderMessageID stores the provider-side message ID on a completed job.
+func (r *PostgresJobRepository) SetProviderMessageID(ctx context.Context, jobID, providerMessageID string) error {
+	const q = `UPDATE jobs SET provider_message_id = $1 WHERE id = $2`
+	_, err := r.db.Exec(ctx, q, providerMessageID, jobID)
+	if err != nil {
+		return fmt.Errorf("set provider message id: %w", err)
+	}
+	return nil
+}
+
+// FindByProviderMessageID looks up a job by its provider-side message ID (e.g. SendGrid's sg_message_id).
+func (r *PostgresJobRepository) FindByProviderMessageID(ctx context.Context, providerMessageID string) (*domain.Job, error) {
+	const q = `SELECT id, user_id, api_key_id, payload, status, retries, max_retries, run_at, locked_until, created_at, updated_at FROM jobs WHERE provider_message_id = $1`
+	var j domain.Job
+	err := r.db.QueryRow(ctx, q, providerMessageID).Scan(
+		&j.ID, &j.UserID, &j.APIKeyID, &j.Payload, &j.Status,
+		&j.Retries, &j.MaxRetries, &j.RunAt, &j.LockedUntil,
+		&j.CreatedAt, &j.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find job by provider message id: %w", err)
+	}
+	return &j, nil
+}
+

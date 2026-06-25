@@ -10,6 +10,17 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// EmailProvider enumerates supported email sending backends.
+const (
+	ProviderSendGrid = "sendgrid"
+	ProviderMailgun  = "mailgun"
+	ProviderSMTP     = "smtp"
+	ProviderMock     = "mock"
+)
+
+// DefaultEmailProvider is used when EMAIL_PROVIDER is not set.
+const DefaultEmailProvider = ProviderSendGrid
+
 type Config struct {
 	AppEnv                string
 	DBUrl                 string
@@ -21,7 +32,16 @@ type Config struct {
 	GoogleClientID        string
 	GoogleClientSecret    string
 	OAuthStateSecret      string
+	EmailProvider         string
 	SendGridKey           string
+	MailgunDomain         string
+	MailgunKey            string
+	MailgunBaseURL        string
+	SMTPHost              string
+	SMTPPort              string
+	SMTPUser              string
+	SMTPPass              string
+	UnsubscribeSecret     string
 	FromEmail             string
 	FromName              string
 	FrontendURL           string
@@ -50,7 +70,16 @@ func Load() (*Config, error) {
 		GoogleClientID:        os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret:    os.Getenv("GOOGLE_CLIENT_SECRET"),
 		OAuthStateSecret:      os.Getenv("OAUTH_STATE_SECRET"),
+		EmailProvider:         getEnvOrDefault("EMAIL_PROVIDER", DefaultEmailProvider),
 		SendGridKey:           os.Getenv("SENDGRID_KEY"),
+		MailgunDomain:         os.Getenv("MAILGUN_DOMAIN"),
+		MailgunKey:            os.Getenv("MAILGUN_KEY"),
+		MailgunBaseURL:        os.Getenv("MAILGUN_BASE_URL"),
+		SMTPHost:              os.Getenv("SMTP_HOST"),
+		SMTPPort:              os.Getenv("SMTP_PORT"),
+		SMTPUser:              os.Getenv("SMTP_USER"),
+		SMTPPass:              os.Getenv("SMTP_PASS"),
+		UnsubscribeSecret:     getEnvOrDefault("UNSUBSCRIBE_SECRET", "change-me"),
 		RazorpayKeyID:         os.Getenv("RAZORPAY_KEY_ID"),
 		RazorpayKeySecret:     os.Getenv("RAZORPAY_KEY_SECRET"),
 		RazorpayWebhookSecret: os.Getenv("RAZORPAY_WEBHOOK_SECRET"),
@@ -62,6 +91,13 @@ func Load() (*Config, error) {
 		AllowedOrigins:        splitCSV(getEnvOrDefault("ALLOWED_ORIGINS", getEnvOrDefault("FRONTEND_URL", "http://localhost:5173"))),
 	}
 
+	// Validate email provider
+	switch cfg.EmailProvider {
+	case ProviderSendGrid, ProviderMailgun, ProviderSMTP, ProviderMock:
+	default:
+		return nil, fmt.Errorf("invalid EMAIL_PROVIDER: %q (must be sendgrid, mailgun, smtp, or mock)", cfg.EmailProvider)
+	}
+
 	// Validate required fields
 	required := map[string]string{
 		"DB_URL":               cfg.DBUrl,
@@ -69,9 +105,11 @@ func Load() (*Config, error) {
 		"GOOGLE_CLIENT_ID":     cfg.GoogleClientID,
 		"GOOGLE_CLIENT_SECRET": cfg.GoogleClientSecret,
 		"OAUTH_STATE_SECRET":   cfg.OAuthStateSecret,
-		"SENDGRID_KEY":         cfg.SendGridKey,
 		"RAZORPAY_KEY_ID":      cfg.RazorpayKeyID,
 		"RAZORPAY_KEY_SECRET":  cfg.RazorpayKeySecret,
+	}
+	if cfg.EmailProvider == ProviderSendGrid {
+		required["SENDGRID_KEY"] = cfg.SendGridKey
 	}
 
 	var missing []string

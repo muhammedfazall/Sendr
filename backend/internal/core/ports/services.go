@@ -38,6 +38,11 @@ type RateLimiter interface {
 	GetCount(ctx context.Context, userID string) (int, error)
 }
 
+// TemplateService renders user-defined email templates with provided data.
+type TemplateService interface {
+	Render(ctx context.Context, templateID, userID string, data map[string]any) (subject, html, text string, err error)
+}
+
 // PaymentService handles Razorpay order creation, verification, and plan upgrades.
 type PaymentService interface {
 	CreateOrder(ctx context.Context, userID, planName string) (map[string]any, error)

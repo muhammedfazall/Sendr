@@ -54,6 +54,10 @@ func (m *mockRepo) ListByUser(_ context.Context, _ string, _ string, _, _ int) (
 func (m *mockRepo) Enqueue(_ context.Context, _, _ string, _ domain.EmailPayload) (*domain.Job, error) {
 	return nil, nil
 }
+func (m *mockRepo) SetProviderMessageID(_ context.Context, _, _ string) error { return nil }
+func (m *mockRepo) FindByProviderMessageID(_ context.Context, _ string) (*domain.Job, error) {
+	return nil, nil
+}
 
 var errSendFailed = errors.New("send failed")
 
@@ -61,7 +65,7 @@ func TestWorkerProcessJobSuccess(t *testing.T) {
 	repo := &mockRepo{}
 	sender := &emailsender.MockSender{}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	w := New(repo, sender, logger)
+	w := New(repo, sender, nil, logger, "", "")
 
 	job := domain.Job{
 		ID: "job-1", UserID: "user-1", Status: "pending",
@@ -95,7 +99,7 @@ func TestWorkerProcessJobNonRetryableError(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	w := New(repo, sender, logger)
+	w := New(repo, sender, nil, logger, "", "")
 
 	job := domain.Job{
 		ID: "job-2", UserID: "user-1", Status: "pending", Retries: 0, MaxRetries: 3,
@@ -123,7 +127,7 @@ func TestWorkerProcessJobRetryableError(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	w := New(repo, sender, logger)
+	w := New(repo, sender, nil, logger, "", "")
 
 	job := domain.Job{
 		ID: "job-3", UserID: "user-1", Status: "pending", Retries: 0, MaxRetries: 3,
@@ -154,7 +158,7 @@ func TestWorkerProcessJobRetryExhausted(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	w := New(repo, sender, logger)
+	w := New(repo, sender, nil, logger, "", "")
 
 	// Job with retries = 2, MaxRetries = 3 — this means 2 retries already used,
 	// so one more try is allowed (retries < MaxRetries-1 → 2 < 2 → false)
@@ -181,7 +185,7 @@ func TestWorkerProcessJobLastRetry(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	w := New(repo, sender, logger)
+	w := New(repo, sender, nil, logger, "", "")
 
 	// retries = 1, MaxRetries = 3 — one more retry allowed
 	job := domain.Job{
@@ -211,7 +215,7 @@ func TestWorkerProcessJobBackoffScheduleBoundary(t *testing.T) {
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	w := New(repo, sender, logger)
+	w := New(repo, sender, nil, logger, "", "")
 
 	// retries = 0 → backoffSchedule[0] = 10s
 	job := domain.Job{
@@ -236,7 +240,7 @@ func TestWorkerProcessJobMarkDoneError(t *testing.T) {
 	}
 	sender := &emailsender.MockSender{}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	w := New(repo, sender, logger)
+	w := New(repo, sender, nil, logger, "", "")
 
 	job := domain.Job{
 		ID: "job-7", UserID: "user-1",
@@ -274,7 +278,7 @@ func TestWorkerNewWithMockDepsCreatesCleanInstance(t *testing.T) {
 	repo := &mockRepo{}
 	sender := &emailsender.MockSender{}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	w := New(repo, sender, logger)
+	w := New(repo, sender, nil, logger, "", "")
 
 	if w.repo != repo {
 		t.Fatal("repo not set correctly")
