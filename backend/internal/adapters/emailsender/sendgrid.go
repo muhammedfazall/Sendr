@@ -30,9 +30,10 @@ func NewSendGrid(apiKey, fromEmail, fromName string) *SendGridSender {
 	}
 }
 
-// Send delivers an email. Returns a RetryableError on 5xx/network failures,
+// Send delivers an email. Returns a SendResult with the provider's message ID
+// on success, or a RetryableError on 5xx/network failures,
 // and a plain error on 4xx (bad request — retrying won't help).
-func (s *SendGridSender) Send(ctx context.Context, email *domain.EmailPayload) error {
+func (s *SendGridSender) Send(ctx context.Context, email *domain.EmailPayload) (*SendResult, error) {
 	from := map[string]string{"email": s.fromEmail, "name": s.fromName}
 	if email.From != nil && email.From.Email != "" {
 		from = map[string]string{"email": email.From.Email}
@@ -106,30 +107,35 @@ func (s *SendGridSender) Send(ctx context.Context, email *domain.EmailPayload) e
 
 	b, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal sendgrid payload: %w", err)
+		return nil, fmt.Errorf("marshal sendgrid payload: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		"https://api.sendgrid.com/v3/mail/send", bytes.NewReader(b))
 	if err != nil {
-		return &RetryableError{Err: err}
+		return nil, &RetryableError{Err: err}
 	}
 	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return &RetryableError{Err: err} // network failure — safe to retry
+		return nil, &RetryableError{Err: err} // network failure — safe to retry
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 500 {
-		return &RetryableError{Err: fmt.Errorf("sendgrid %d", resp.StatusCode)}
+		return nil, &RetryableError{Err: fmt.Errorf("sendgrid %d", resp.StatusCode)}
 	}
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("sendgrid bad request: %d (won't retry)", resp.StatusCode)
+		return nil, fmt.Errorf("sendgrid bad request: %d (won't retry)", resp.StatusCode)
 	}
-	return nil
+	return &SendResult{ProviderMessageID: resp.Header.Get("X-Message-Id")}, nil
+}
+
+// SendResult holds optional metadata returned by a successful send.
+type SendResult struct {
+	ProviderMessageID string
 }
 
 // RetryableError signals a transient failure — the worker will back off and retry.
@@ -147,5 +153,5 @@ func IsRetryable(err error) bool {
 // Sender is the interface the worker depends on.
 // Using an interface here means tests swap in MockSender with zero changes.
 type Sender interface {
-	Send(ctx context.Context, email *domain.EmailPayload) error
+	Send(ctx context.Context, email *domain.EmailPayload) (*SendResult, error)
 }

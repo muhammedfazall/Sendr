@@ -74,13 +74,13 @@ func TestNewSendGridHTTPClient(t *testing.T) {
 func TestMockSender(t *testing.T) {
 	sender := &MockSender{}
 
-	err := sender.Send(context.Background(), &domain.EmailPayload{
+	_, err := sender.Send(context.Background(), &domain.EmailPayload{
 		To: []string{"a@test.com"}, Subject: "Subject A", TextBody: "Body A",
 	})
 	if err != nil {
 		t.Fatalf("mock Send: %v", err)
 	}
-	err = sender.Send(context.Background(), &domain.EmailPayload{
+	_, err = sender.Send(context.Background(), &domain.EmailPayload{
 		To: []string{"b@test.com"}, Subject: "Subject B", TextBody: "Body B",
 	})
 	if err != nil {
@@ -108,14 +108,14 @@ func TestMockSenderWithErrorFn(t *testing.T) {
 		},
 	}
 
-	err := sender.Send(context.Background(), &domain.EmailPayload{
+	_, err := sender.Send(context.Background(), &domain.EmailPayload{
 		To: []string{"ok@test.com"}, Subject: "S", TextBody: "B",
 	})
 	if err != nil {
 		t.Fatalf("expected no error for ok@test.com, got %v", err)
 	}
 
-	err = sender.Send(context.Background(), &domain.EmailPayload{
+	_, err = sender.Send(context.Background(), &domain.EmailPayload{
 		To: []string{"fail@test.com"}, Subject: "S", TextBody: "B",
 	})
 	if err == nil {

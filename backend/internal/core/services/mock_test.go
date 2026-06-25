@@ -230,6 +230,12 @@ func (m *mockJobRepo) ListByUser(_ context.Context, _ string, _ string, _ int, _
 	return nil, nil
 }
 
+func (m *mockJobRepo) SetProviderMessageID(_ context.Context, _, _ string) error { return nil }
+
+func (m *mockJobRepo) FindByProviderMessageID(_ context.Context, _ string) (*domain.Job, error) {
+	return nil, nil
+}
+
 type mockPaymentRepo struct {
 	payments map[string]*domain.Payment
 }

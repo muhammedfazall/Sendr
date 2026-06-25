@@ -79,7 +79,7 @@ func (a *App) startWorker(ctx context.Context) error {
 		return fmt.Errorf("create email sender: %w", err)
 	}
 	jobRepo := jobrepo.New(a.pool)
-	a.worker = worker.New(jobRepo, sender, a.bus, a.logger)
+	a.worker = worker.New(jobRepo, sender, a.bus, a.logger, a.cfg.BackendURL, a.cfg.UnsubscribeSecret)
 	go a.bus.Run(ctx)
 	go a.worker.Run(ctx)
 	log.Println("worker started")

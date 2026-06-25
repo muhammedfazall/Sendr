@@ -138,6 +138,38 @@ func (p *EmailPayload) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Template is a user-defined email template rendered with Go html/template.
+type Template struct {
+	ID               string    `json:"id"`
+	UserID           string    `json:"user_id"`
+	Name             string    `json:"name"`
+	SubjectTemplate  string    `json:"subject_template"`
+	HTMLTemplate     string    `json:"html_template"`
+	TextTemplate     string    `json:"text_template"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// EmailEvent represents a delivery event from SendGrid (open, click, bounce, etc.).
+type EmailEvent struct {
+	ID          string          `json:"id"`
+	Email       string          `json:"email"`
+	EventType   string          `json:"event_type"`
+	SGEventID   string          `json:"sg_event_id,omitempty"`
+	SGMessageID string          `json:"sg_message_id,omitempty"`
+	JobID       string          `json:"job_id,omitempty"`
+	Timestamp   time.Time       `json:"timestamp"`
+	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
+}
+
+// Unsubscription records a recipient who has opted out.
+type Unsubscription struct {
+	Email     string    `json:"email"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Payment tracks a Razorpay payment for a plan upgrade.
 type Payment struct {
 	ID                 string    `json:"id"`

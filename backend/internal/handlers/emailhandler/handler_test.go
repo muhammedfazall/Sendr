@@ -58,7 +58,7 @@ func TestSendSuccess(t *testing.T) {
 			return &domain.Job{ID: "job-123", Status: "pending", CreatedAt: time.Now()}, nil
 		},
 	}
-	h := New(email, &mockJobReader{})
+	h := New(email, &mockJobReader{}, nil, nil)
 
 	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -74,7 +74,7 @@ func TestSendSuccess(t *testing.T) {
 }
 
 func TestSendInvalidBody(t *testing.T) {
-	h := New(&mockEmailSvc{}, &mockJobReader{})
+	h := New(&mockEmailSvc{}, &mockJobReader{}, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(`not json`))
 	req.Header.Set("Content-Type", "application/json")
@@ -89,7 +89,7 @@ func TestSendInvalidBody(t *testing.T) {
 }
 
 func TestSendMissingFields(t *testing.T) {
-	h := New(&mockEmailSvc{}, &mockJobReader{})
+	h := New(&mockEmailSvc{}, &mockJobReader{}, nil, nil)
 
 	body := `{"to":[],"subject":"","text_body":""}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -105,7 +105,7 @@ func TestSendMissingFields(t *testing.T) {
 }
 
 func TestSendSubjectTooLong(t *testing.T) {
-	h := New(&mockEmailSvc{}, &mockJobReader{})
+	h := New(&mockEmailSvc{}, &mockJobReader{}, nil, nil)
 
 	body := `{"to":["a@b.com"],"subject":"` + strings.Repeat("A", 999) + `","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -121,7 +121,7 @@ func TestSendSubjectTooLong(t *testing.T) {
 }
 
 func TestSendBodyTooLong(t *testing.T) {
-	h := New(&mockEmailSvc{}, &mockJobReader{})
+	h := New(&mockEmailSvc{}, &mockJobReader{}, nil, nil)
 
 	body := `{"to":["a@b.com"],"subject":"Hi","text_body":"` + strings.Repeat("B", 50001) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -137,7 +137,7 @@ func TestSendBodyTooLong(t *testing.T) {
 }
 
 func TestSendInvalidEmail(t *testing.T) {
-	h := New(&mockEmailSvc{}, &mockJobReader{})
+	h := New(&mockEmailSvc{}, &mockJobReader{}, nil, nil)
 
 	body := `{"to":["not-an-email"],"subject":"Hi","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -158,7 +158,7 @@ func TestSendRateLimited(t *testing.T) {
 			return nil, constants.ErrRateLimitExceeded
 		},
 	}
-	h := New(email, &mockJobReader{})
+	h := New(email, &mockJobReader{}, nil, nil)
 
 	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -182,7 +182,7 @@ func TestSendInvalidAPIKey(t *testing.T) {
 			return nil, constants.ErrAPIKeyInvalid
 		},
 	}
-	h := New(email, &mockJobReader{})
+	h := New(email, &mockJobReader{}, nil, nil)
 
 	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -203,7 +203,7 @@ func TestSendAPIKeyRevoked(t *testing.T) {
 			return nil, constants.ErrAPIKeyRevoked
 		},
 	}
-	h := New(email, &mockJobReader{})
+	h := New(email, &mockJobReader{}, nil, nil)
 
 	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -224,7 +224,7 @@ func TestSendAPIKeyNotFound(t *testing.T) {
 			return nil, constants.ErrAPIKeyNotFound
 		},
 	}
-	h := New(email, &mockJobReader{})
+	h := New(email, &mockJobReader{}, nil, nil)
 
 	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -245,7 +245,7 @@ func TestSendUserNotFound(t *testing.T) {
 			return nil, constants.ErrUserNotFound
 		},
 	}
-	h := New(email, &mockJobReader{})
+	h := New(email, &mockJobReader{}, nil, nil)
 
 	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -266,7 +266,7 @@ func TestSendGenericError(t *testing.T) {
 			return nil, errors.New("unexpected error")
 		},
 	}
-	h := New(email, &mockJobReader{})
+	h := New(email, &mockJobReader{}, nil, nil)
 
 	body := `{"to":["a@b.com"],"subject":"Hello","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -282,7 +282,7 @@ func TestSendGenericError(t *testing.T) {
 }
 
 func TestSendWhitespaceOnlySubject(t *testing.T) {
-	h := New(&mockEmailSvc{}, &mockJobReader{})
+	h := New(&mockEmailSvc{}, &mockJobReader{}, nil, nil)
 
 	body := `{"to":["a@b.com"],"subject":"   ","text_body":"World"}`
 	req := httptest.NewRequest(http.MethodPost, "/emails/send", strings.NewReader(body))
@@ -304,7 +304,7 @@ func TestGetJobSuccess(t *testing.T) {
 			return &domain.Job{ID: "job-1", Status: "sent", Retries: 0, CreatedAt: now, UpdatedAt: now}, nil
 		},
 	}
-	h := New(&mockEmailSvc{}, jobs)
+	h := New(&mockEmailSvc{}, jobs, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/emails/job-1", nil)
 	req = chiCtxEmail(req, map[string]string{"id": "job-1"})
@@ -318,7 +318,7 @@ func TestGetJobSuccess(t *testing.T) {
 }
 
 func TestGetJobMissingID(t *testing.T) {
-	h := New(&mockEmailSvc{}, &mockJobReader{})
+	h := New(&mockEmailSvc{}, &mockJobReader{}, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/emails/", nil)
 	req = chiCtxEmail(req, map[string]string{"id": ""})
@@ -337,7 +337,7 @@ func TestGetJobNotFound(t *testing.T) {
 			return nil, errors.New("not found")
 		},
 	}
-	h := New(&mockEmailSvc{}, jobs)
+	h := New(&mockEmailSvc{}, jobs, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/emails/job-1", nil)
 	req = chiCtxEmail(req, map[string]string{"id": "job-1"})
@@ -356,7 +356,7 @@ func TestListSuccess(t *testing.T) {
 			return []domain.Job{{ID: "job-1", Status: "sent"}}, nil
 		},
 	}
-	h := New(&mockEmailSvc{}, jobs)
+	h := New(&mockEmailSvc{}, jobs, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/emails?status=sent&limit=10&offset=0", nil)
 	req = emailWithClaims(req, "user-1")
@@ -370,7 +370,7 @@ func TestListSuccess(t *testing.T) {
 }
 
 func TestListMissingClaims(t *testing.T) {
-	h := New(&mockEmailSvc{}, &mockJobReader{})
+	h := New(&mockEmailSvc{}, &mockJobReader{}, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/emails", nil)
 	w := httptest.NewRecorder()
@@ -383,7 +383,7 @@ func TestListMissingClaims(t *testing.T) {
 }
 
 func TestListInvalidStatus(t *testing.T) {
-	h := New(&mockEmailSvc{}, &mockJobReader{})
+	h := New(&mockEmailSvc{}, &mockJobReader{}, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/emails?status=invalid", nil)
 	req = emailWithClaims(req, "user-1")
@@ -405,7 +405,7 @@ func TestListDefaultPagination(t *testing.T) {
 			return []domain.Job{}, nil
 		},
 	}
-	h := New(&mockEmailSvc{}, jobs)
+	h := New(&mockEmailSvc{}, jobs, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/emails", nil)
 	req = emailWithClaims(req, "user-1")
@@ -427,7 +427,7 @@ func TestListExceedsMaxLimit(t *testing.T) {
 			return []domain.Job{}, nil
 		},
 	}
-	h := New(&mockEmailSvc{}, jobs)
+	h := New(&mockEmailSvc{}, jobs, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/emails?limit=999", nil)
 	req = emailWithClaims(req, "user-1")
@@ -449,7 +449,7 @@ func TestListInvalidQueryParams(t *testing.T) {
 			return []domain.Job{}, nil
 		},
 	}
-	h := New(&mockEmailSvc{}, jobs)
+	h := New(&mockEmailSvc{}, jobs, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/emails?limit=abc&offset=xyz", nil)
 	req = emailWithClaims(req, "user-1")
@@ -468,7 +468,7 @@ func TestListRepositoryError(t *testing.T) {
 			return nil, errors.New("db error")
 		},
 	}
-	h := New(&mockEmailSvc{}, jobs)
+	h := New(&mockEmailSvc{}, jobs, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/emails", nil)
 	req = emailWithClaims(req, "user-1")

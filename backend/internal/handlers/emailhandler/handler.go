@@ -19,6 +19,11 @@ import (
 	"github.com/muhammedfazall/Sendr/pkg/response"
 )
 
+// statsProvider returns aggregate delivery stats for a user.
+type statsProvider interface {
+	GetStats(ctx context.Context, userID string) (*ports.EmailEventStats, error)
+}
+
 // jobReader defines the job read methods the handler needs.
 type jobReader interface {
 	GetByID(ctx context.Context, jobID string) (*domain.Job, error)
@@ -30,16 +35,25 @@ const (
 	maxBodyLength    = 50_000
 )
 
-// Handler handles POST /emails/send and GET /emails/:id.
+// Handler handles POST /emails/send, GET /emails/:id, and GET /emails/stats.
 // Routes under this handler are protected by the API key middleware,
 // not JWT — callers authenticate with their mk_live_... key.
 type Handler struct {
-	email ports.EmailService
-	jobDB jobReader
+	email     ports.EmailService
+	jobDB     jobReader
+	stats     statsProvider
+	templates ports.TemplateService
 }
 
-func New(email ports.EmailService, jobDB jobReader) *Handler {
-	return &Handler{email: email, jobDB: jobDB}
+func New(email ports.EmailService, jobDB jobReader, stats statsProvider, templates ports.TemplateService) *Handler {
+	return &Handler{email: email, jobDB: jobDB, stats: stats, templates: templates}
+}
+
+// sendRequest is the JSON body for POST /emails/send with optional template support.
+type sendRequest struct {
+	domain.EmailPayload
+	TemplateID   string         `json:"template_id,omitempty"`
+	TemplateData map[string]any `json:"template_data,omitempty"`
 }
 
 // Send handles POST /emails/send.
@@ -56,44 +70,67 @@ func (h *Handler) Send() http.HandlerFunc {
 			fullKey = authHeader[7:] // strip "Bearer "
 		}
 
-		var payload domain.EmailPayload
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		var req sendRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			response.Error(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON")
 			return
 		}
-		if len(payload.To) == 0 {
+
+		if req.TemplateID != "" {
+			userID := userFromClaims(r)
+			if userID == "" {
+				response.Error(w, http.StatusUnauthorized, "unauthorized", "could not resolve user")
+				return
+			}
+			subject, htmlBody, textBody, err := h.templates.Render(r.Context(), req.TemplateID, userID, req.TemplateData)
+			if err != nil {
+				response.Error(w, http.StatusBadRequest, "template_error", err.Error())
+				return
+			}
+			if req.Subject == "" {
+				req.Subject = subject
+			}
+			if req.HTMLBody == "" {
+				req.HTMLBody = htmlBody
+			}
+			if req.TextBody == "" {
+				req.TextBody = textBody
+			}
+		}
+
+		if len(req.To) == 0 {
 			response.Error(w, http.StatusBadRequest, "missing_fields", "to is required")
 			return
 		}
-		for _, addr := range payload.To {
+		for _, addr := range req.To {
 			if _, err := mail.ParseAddress(addr); err != nil {
 				response.Error(w, http.StatusBadRequest, "invalid_email", fmt.Sprintf("invalid recipient: %s", addr))
 				return
 			}
 		}
-		payload.Subject = strings.TrimSpace(payload.Subject)
-		if payload.Subject == "" {
+		req.Subject = strings.TrimSpace(req.Subject)
+		if req.Subject == "" {
 			response.Error(w, http.StatusBadRequest, "missing_fields", "subject is required")
 			return
 		}
-		if len(payload.Subject) > maxSubjectLength {
+		if len(req.Subject) > maxSubjectLength {
 			response.Error(w, http.StatusBadRequest, "subject_too_large", "subject must be under 998 characters")
 			return
 		}
-		if payload.TextBody == "" && payload.HTMLBody == "" {
+		if req.TextBody == "" && req.HTMLBody == "" {
 			response.Error(w, http.StatusBadRequest, "missing_fields", "text_body or html_body is required")
 			return
 		}
-		if len(payload.TextBody) > maxBodyLength {
+		if len(req.TextBody) > maxBodyLength {
 			response.Error(w, http.StatusBadRequest, "body_too_large", "text_body must be under 50KB")
 			return
 		}
-		if len(payload.HTMLBody) > maxBodyLength {
+		if len(req.HTMLBody) > maxBodyLength {
 			response.Error(w, http.StatusBadRequest, "body_too_large", "html_body must be under 50KB")
 			return
 		}
 
-		job, err := h.email.Send(r.Context(), fullKey, payload)
+		job, err := h.email.Send(r.Context(), fullKey, req.EmailPayload)
 		if err != nil {
 			h.handleSendError(w, err)
 			return
@@ -130,6 +167,30 @@ func (h *Handler) GetJob() http.HandlerFunc {
 	}
 }
 
+// Stats handles GET /emails/stats — returns delivery stats for the authenticated user.
+func (h *Handler) Stats() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := middleware.GetClaims(r)
+		if !ok {
+			response.Error(w, http.StatusUnauthorized, "unauthorized", "missing claims")
+			return
+		}
+		userID, ok := claims["user_id"].(string)
+		if !ok || userID == "" {
+			response.Error(w, http.StatusUnauthorized, "unauthorized", "invalid token claims")
+			return
+		}
+
+		stats, err := h.stats.GetStats(r.Context(), userID)
+		if err != nil {
+			response.Error(w, http.StatusInternalServerError, "internal_error", "failed to fetch stats")
+			return
+		}
+
+		response.JSON(w, http.StatusOK, stats)
+	}
+}
+
 // handleSendError maps service-layer sentinel errors to HTTP responses.
 // Also writes rate limit headers on 429 so callers know when to retry.
 func (h *Handler) handleSendError(w http.ResponseWriter, err error) {
@@ -158,6 +219,15 @@ func nextMidnightUTC() int64 {
 	now := time.Now().UTC()
 	midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
 	return midnight.Unix()
+}
+
+func userFromClaims(r *http.Request) string {
+	claims, ok := middleware.GetClaims(r)
+	if !ok {
+		return ""
+	}
+	userID, _ := claims["user_id"].(string)
+	return userID
 }
 
 // List handles GET /emails — returns the authenticated user's email history.

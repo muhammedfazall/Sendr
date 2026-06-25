@@ -54,34 +54,8 @@ func NewMailgun(domain, apiKey, baseURL, fromEmail, fromName string) *MailgunSen
 	}
 }
 
-func (s *MailgunSender) Send(ctx context.Context, email *domain.EmailPayload) error {
-	return fmt.Errorf("MailgunSender: not yet implemented")
+func (s *MailgunSender) Send(ctx context.Context, email *domain.EmailPayload) (*SendResult, error) {
+	return nil, fmt.Errorf("MailgunSender: not yet implemented")
 }
 
-// compile-time check: *SMTPSender implements Sender.
-var _ Sender = (*SMTPSender)(nil)
 
-// SMTPSender sends emails via an SMTP relay.
-type SMTPSender struct {
-	host      string
-	port      string
-	user      string
-	pass      string
-	fromEmail string
-	fromName  string
-}
-
-func NewSMTP(host, port, user, pass, fromEmail, fromName string) *SMTPSender {
-	return &SMTPSender{
-		host:      host,
-		port:      port,
-		user:      user,
-		pass:      pass,
-		fromEmail: fromEmail,
-		fromName:  fromName,
-	}
-}
-
-func (s *SMTPSender) Send(ctx context.Context, email *domain.EmailPayload) error {
-	return fmt.Errorf("SMTPSender: not yet implemented")
-}

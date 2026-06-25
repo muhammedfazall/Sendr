@@ -12,14 +12,14 @@ type MockSender struct {
 	ErrFn func(to string) error // inject per-recipient errors
 }
 
-func (m *MockSender) Send(_ context.Context, email *domain.EmailPayload) error {
+func (m *MockSender) Send(_ context.Context, email *domain.EmailPayload) (*SendResult, error) {
 	if m.ErrFn != nil {
 		for _, to := range email.To {
 			if err := m.ErrFn(to); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 	m.Sent = append(m.Sent, email)
-	return nil
+	return &SendResult{}, nil
 }

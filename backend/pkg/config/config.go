@@ -41,6 +41,7 @@ type Config struct {
 	SMTPPort              string
 	SMTPUser              string
 	SMTPPass              string
+	UnsubscribeSecret     string
 	FromEmail             string
 	FromName              string
 	FrontendURL           string
@@ -78,6 +79,7 @@ func Load() (*Config, error) {
 		SMTPPort:              os.Getenv("SMTP_PORT"),
 		SMTPUser:              os.Getenv("SMTP_USER"),
 		SMTPPass:              os.Getenv("SMTP_PASS"),
+		UnsubscribeSecret:     getEnvOrDefault("UNSUBSCRIBE_SECRET", "change-me"),
 		RazorpayKeyID:         os.Getenv("RAZORPAY_KEY_ID"),
 		RazorpayKeySecret:     os.Getenv("RAZORPAY_KEY_SECRET"),
 		RazorpayWebhookSecret: os.Getenv("RAZORPAY_WEBHOOK_SECRET"),

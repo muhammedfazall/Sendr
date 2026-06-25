@@ -2,6 +2,10 @@ package worker
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -21,6 +25,7 @@ type jobRepository interface {
 	MoveToDLQ(ctx context.Context, job domain.Job, errMsg string) error
 	ReclaimZombies(ctx context.Context) (int64, error)
 	ClaimBatch(ctx context.Context, batchSize int) ([]domain.Job, error)
+	SetProviderMessageID(ctx context.Context, jobID, providerMessageID string) error
 }
 
 // backoffSchedule maps retry attempt (0-indexed) to how long to wait before
@@ -33,14 +38,23 @@ var backoffSchedule = []time.Duration{
 
 // Worker polls the job queue and processes jobs concurrently.
 type Worker struct {
-	repo   jobRepository
-	sender emailsender.Sender
-	bus    eventBus
-	log    *slog.Logger
+	repo              jobRepository
+	sender            emailsender.Sender
+	bus               eventBus
+	log               *slog.Logger
+	unsubscribeBase   string
+	unsubscribeSecret string
 }
 
-func New(repo jobRepository, sender emailsender.Sender, bus eventBus, log *slog.Logger) *Worker {
-	return &Worker{repo: repo, sender: sender, bus: bus, log: log}
+func New(repo jobRepository, sender emailsender.Sender, bus eventBus, log *slog.Logger, unsubscribeBase, unsubscribeSecret string) *Worker {
+	return &Worker{
+		repo:              repo,
+		sender:            sender,
+		bus:               bus,
+		log:               log,
+		unsubscribeBase:   unsubscribeBase,
+		unsubscribeSecret: unsubscribeSecret,
+	}
 }
 
 // Run starts the poll loop and blocks until ctx is cancelled.
@@ -100,13 +114,20 @@ func (w *Worker) Run(ctx context.Context) {
 func (w *Worker) processJob(ctx context.Context, j domain.Job) {
 	log := w.log.With("job_id", j.ID, "to", j.Payload.To)
 
-	err := w.sender.Send(ctx, &j.Payload)
+	w.attachUnsubscribeHeader(&j.Payload)
+
+	result, err := w.sender.Send(ctx, &j.Payload)
 	if err == nil {
+		if result != nil && result.ProviderMessageID != "" {
+			if setErr := w.repo.SetProviderMessageID(ctx, j.ID, result.ProviderMessageID); setErr != nil {
+				log.Error("set provider message id failed", "err", setErr)
+			}
+		}
 		w.publish(domain.EventEmailSent, j)
 		if markErr := w.repo.MarkDone(ctx, j.ID); markErr != nil {
 			log.Error("mark done failed", "err", markErr)
 		} else {
-			log.Info("email sent")
+			log.Info("email sent", "provider_message_id", result.ProviderMessageID)
 		}
 		return
 	}
@@ -145,4 +166,30 @@ func (w *Worker) publish(typ domain.EventType, j domain.Job) {
 		return
 	}
 	w.bus.Publish(domain.NewEvent(typ, j))
+}
+
+// attachUnsubscribeHeader adds a List-Unsubscribe header to every recipient
+// so mail clients show an unsubscribe button and providers don't flag as spam.
+func (w *Worker) attachUnsubscribeHeader(payload *domain.EmailPayload) {
+	if w.unsubscribeSecret == "" || w.unsubscribeBase == "" {
+		return
+	}
+	if payload.Headers == nil {
+		payload.Headers = make(map[string]string)
+	}
+	var links string
+	for _, to := range payload.To {
+		tok := unsubscribeToken(to, w.unsubscribeSecret)
+		links += fmt.Sprintf("<%s/unsubscribe?email=%s&token=%s>,", w.unsubscribeBase, to, tok)
+	}
+	if len(links) > 0 {
+		links = links[:len(links)-1] // trim trailing comma
+	}
+	payload.Headers["List-Unsubscribe"] = links
+}
+
+func unsubscribeToken(email, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(email))
+	return hex.EncodeToString(mac.Sum(nil))
 }
