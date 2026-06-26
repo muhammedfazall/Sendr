@@ -35,16 +35,18 @@ export default function Dashboard() {
   const [profile, setProfile] = useState(null)
   const [keys, setKeys] = useState([])
   const [history, setHistory] = useState([])
+  const [emailStats, setEmailStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
 
   useEffect(() => {
     async function loadDashboard() {
-      const [profileResult, keysResult, historyResult] = await Promise.allSettled([
+      const [profileResult, keysResult, historyResult, statsResult] = await Promise.allSettled([
         api.me(),
         api.listKeys(),
         api.listEmails('', 8, 0),
+        api.getStats(),
       ])
 
       if (profileResult.status === 'fulfilled') {
@@ -65,13 +67,17 @@ export default function Dashboard() {
         setNotice('Recent activity could not be loaded.')
       }
 
+      if (statsResult.status === 'fulfilled') {
+        setEmailStats(statsResult.value)
+      }
+
       setLoading(false)
     }
 
     Promise.resolve().then(loadDashboard)
   }, [])
 
-  const stats = useMemo(() => {
+  const dashStats = useMemo(() => {
     if (!profile) return null
 
     const usageToday = profile.usage_today ?? 0
@@ -80,9 +86,9 @@ export default function Dashboard() {
     const unlimitedUsage = dailyLimit < 0
     const usagePct = unlimitedUsage || dailyLimit === 0 ? 0 : Math.min((usageToday / dailyLimit) * 100, 100)
 
-    const sent = history.filter((item) => item.status === 'sent').length
-    const failed = history.filter((item) => item.status === 'failed').length
     const active = history.filter((item) => item.status === 'pending' || item.status === 'processing').length
+    const sent = emailStats?.sent ?? history.filter((item) => item.status === 'sent').length
+    const failed = emailStats?.bounces ?? history.filter((item) => item.status === 'failed').length
     const completed = sent + failed
     const deliveryScore = completed === 0 ? null : Math.round((sent / completed) * 100)
 
@@ -104,7 +110,7 @@ export default function Dashboard() {
       keysRemaining,
       keyPct,
     }
-  }, [history, keys.length, profile])
+  }, [history, keys.length, profile, emailStats])
 
   if (error) {
     return (
@@ -114,7 +120,7 @@ export default function Dashboard() {
     )
   }
 
-  if (loading || !profile || !stats) {
+  if (loading || !profile || !dashStats) {
     return (
       <Layout>
         <div className="p-8">
@@ -127,7 +133,7 @@ export default function Dashboard() {
   const compact = Boolean(loadDashboardPrefs().compactDashboard)
   const firstName = profile.name?.split(' ')[0] || 'there'
   const planColor = { free: '#666', pro: '#00d084', max: '#a78bfa' }[profile.plan] || '#666'
-  const usageRing = `conic-gradient(${stats.usagePct > 90 ? 'var(--danger)' : 'var(--accent)'} ${stats.usagePct}%, var(--border) 0)`
+  const usageRing = `conic-gradient(${dashStats.usagePct > 90 ? 'var(--danger)' : 'var(--accent)'} ${dashStats.usagePct}%, var(--border) 0)`
 
   return (
     <Layout>
@@ -154,10 +160,10 @@ export default function Dashboard() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
-          <Metric label="Usage today" value={formatLimit(stats.usageToday)} hint={stats.unlimitedUsage ? 'Unlimited plan' : `${formatLimit(stats.remaining)} left`} />
-          <Metric label="Delivery health" value={stats.deliveryScore === null ? 'Ready' : `${stats.deliveryScore}%`} hint={`${stats.sent} sent, ${stats.failed} failed`} tone={stats.failed > 0 ? 'warn' : 'good'} />
-          <Metric label="API keys" value={formatLimit(keys.length)} hint={stats.keysRemaining < 0 ? 'Unlimited keys' : `${formatLimit(stats.keysRemaining)} available`} />
-          <Metric label="Plan" value={profile.plan} hint={formatLimit(stats.dailyLimit, 'emails/day')} color={planColor} />
+          <Metric label="Usage today" value={formatLimit(dashStats.usageToday)} hint={dashStats.unlimitedUsage ? 'Unlimited plan' : `${formatLimit(dashStats.remaining)} left`} />
+          <Metric label="Delivery health" value={dashStats.deliveryScore === null ? 'Ready' : `${dashStats.deliveryScore}%`} hint={`${dashStats.sent} sent, ${dashStats.failed} failed`} tone={dashStats.failed > 0 ? 'warn' : 'good'} />
+          <Metric label="API keys" value={formatLimit(keys.length)} hint={dashStats.keysRemaining < 0 ? 'Unlimited keys' : `${formatLimit(dashStats.keysRemaining)} available`} />
+          <Metric label="Plan" value={profile.plan} hint={formatLimit(dashStats.dailyLimit, 'emails/day')} color={planColor} />
         </div>
 
         <div className={`grid grid-cols-1 ${compact ? 'xl:grid-cols-2' : 'xl:grid-cols-[1.15fr_0.85fr]'} gap-4`}>
@@ -165,7 +171,7 @@ export default function Dashboard() {
             <div className="flex flex-col md:flex-row md:items-center gap-5">
               <div className="w-28 h-28 rounded-full p-2 shrink-0" style={{ background: usageRing }}>
                 <div className="w-full h-full rounded-full flex flex-col items-center justify-center" style={{ background: 'var(--surface)' }}>
-                  <span className="text-2xl font-semibold mono" style={{ color: 'var(--text)' }}>{stats.unlimitedUsage ? 'All' : `${Math.round(stats.usagePct)}%`}</span>
+                  <span className="text-2xl font-semibold mono" style={{ color: 'var(--text)' }}>{dashStats.unlimitedUsage ? 'All' : `${Math.round(dashStats.usagePct)}%`}</span>
                   <span className="text-xs" style={{ color: 'var(--muted)' }}>used</span>
                 </div>
               </div>
@@ -179,14 +185,14 @@ export default function Dashboard() {
                 </div>
                 <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--muted)' }}>
                   <span>Daily usage</span>
-                  <span className="mono">{formatLimit(stats.usageToday)} / {formatLimit(stats.dailyLimit)}</span>
+                  <span className="mono">{formatLimit(dashStats.usageToday)} / {formatLimit(dashStats.dailyLimit)}</span>
                 </div>
                 <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${stats.unlimitedUsage ? 100 : stats.usagePct}%`, background: stats.usagePct > 90 ? 'var(--danger)' : 'var(--accent)' }} />
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${dashStats.unlimitedUsage ? 100 : dashStats.usagePct}%`, background: dashStats.usagePct > 90 ? 'var(--danger)' : 'var(--accent)' }} />
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-5">
                   <MiniStat label="Wait time" value={`${profile.rate_wait_secs}s`} />
-                  <MiniStat label="Remaining" value={formatLimit(stats.remaining)} />
+                  <MiniStat label="Remaining" value={formatLimit(dashStats.remaining)} />
                 </div>
               </div>
             </div>
@@ -199,7 +205,7 @@ export default function Dashboard() {
             </div>
             <div className="space-y-3">
               <Action to="/keys" title={keys.length > 0 ? 'API key active' : 'Create first API key'} value={keys.length > 0 ? `${keys.length} configured` : 'Start here'} />
-              <Action to="/send" title="Send test email" value={stats.active > 0 ? `${stats.active} in progress` : 'Queue a message'} />
+              <Action to="/send" title="Send test email" value={dashStats.active > 0 ? `${dashStats.active} in progress` : 'Queue a message'} />
               <Action to="/history" title="Review activity" value={history.length > 0 ? `${history.length} recent jobs` : 'No jobs yet'} />
             </div>
           </section>
@@ -210,10 +216,10 @@ export default function Dashboard() {
             <h2 className="text-sm font-semibold mb-4" style={{ color: 'var(--text)' }}>API key capacity</h2>
             <div className="flex items-center justify-between text-xs mb-2" style={{ color: 'var(--muted)' }}>
               <span>Keys in use</span>
-              <span className="mono">{keys.length} / {formatLimit(stats.maxKeys)}</span>
+              <span className="mono">{keys.length} / {formatLimit(dashStats.maxKeys)}</span>
             </div>
             <div className="h-2 rounded-full overflow-hidden mb-4" style={{ background: 'var(--border)' }}>
-              <div className="h-full rounded-full" style={{ width: `${stats.maxKeys < 0 ? 35 : stats.keyPct}%`, background: 'var(--accent)' }} />
+              <div className="h-full rounded-full" style={{ width: `${dashStats.maxKeys < 0 ? 35 : dashStats.keyPct}%`, background: 'var(--accent)' }} />
             </div>
             <div className="space-y-2">
               {keys.slice(0, 3).map((key) => (

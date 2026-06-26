@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import Layout from '../components/Layout'
 
@@ -19,6 +20,14 @@ function validateEmailForm(form) {
   return null
 }
 
+function tryParseJson(value) {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
 export default function SendEmail() {
   const [keys, setKeys] = useState([])
   const [selectedKey, setSelectedKey] = useState('')
@@ -26,6 +35,9 @@ export default function SendEmail() {
   const [sending, setSending] = useState(false)
   const [job, setJob] = useState(null)
   const [error, setError] = useState(null)
+  const [templates, setTemplates] = useState([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [templateDataText, setTemplateDataText] = useState('')
 
   const pollRef = useRef(null)
   const apiKeyRef = useRef('')
@@ -45,6 +57,9 @@ export default function SendEmail() {
         setKeys(nextKeys)
         if (nextKeys.length > 0) setSelectedKey(nextKeys[0].prefix)
       })
+      .catch(() => {})
+    api.listTemplates()
+      .then((data) => setTemplates(data ?? []))
       .catch(() => {})
   }, [])
 
@@ -110,6 +125,12 @@ export default function SendEmail() {
       if (form.textBody.trim()) payload.text_body = form.textBody
       if (form.htmlBody.trim()) payload.html_body = form.htmlBody
 
+      if (selectedTemplateId) {
+        payload.template_id = selectedTemplateId
+        const parsed = tryParseJson(templateDataText)
+        if (parsed) payload.template_data = parsed
+      }
+
       const data = await api.sendEmail(payload, fullKey)
       setJob({ ...data, id: data.job_id, status: 'pending', _apiKey: fullKey })
       clearApiKeyInput()
@@ -166,6 +187,43 @@ export default function SendEmail() {
               />
               <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Paste the full key from when you created it. Never shown again.</p>
             </div>
+
+            {templates.length > 0 && (
+              <div>
+                <label htmlFor="send-template" className="block text-xs mb-1.5" style={{ color: 'var(--muted)' }}>Template (optional)</label>
+                <select
+                  id="send-template"
+                  value={selectedTemplateId}
+                  onChange={(e) => setSelectedTemplateId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                >
+                  <option value="">None — write inline</option>
+                  {templates.map((tpl) => (
+                    <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                  ))}
+                </select>
+                {templates.length > 0 && (
+                  <Link to="/templates" className="text-xs mt-1 inline-block" style={{ color: 'var(--accent)' }}>Manage templates</Link>
+                )}
+              </div>
+            )}
+
+            {selectedTemplateId && (
+              <div>
+                <label htmlFor="template-data" className="block text-xs mb-1.5" style={{ color: 'var(--muted)' }}>Template data (JSON)</label>
+                <textarea
+                  id="template-data"
+                  rows={3}
+                  value={templateDataText}
+                  onChange={(e) => setTemplateDataText(e.target.value)}
+                  placeholder={'{"Name": "Alice", "Message": "Welcome!"}'}
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-none font-mono"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                />
+                <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>Available as {'{{.Name}}'}, {'{{.Message}}'} in the template.</p>
+              </div>
+            )}
 
             <Field id="send-to" label="To" type="email" placeholder="recipient@example.com" value={form.to} errorId={errorId} error={error} onChange={(value) => setForm((current) => ({ ...current, to: value }))} />
             <Field id="send-subject" label="Subject" placeholder="Hello from Sendr" value={form.subject} errorId={errorId} error={error} onChange={(value) => setForm((current) => ({ ...current, subject: value }))} />
