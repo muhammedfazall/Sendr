@@ -157,15 +157,4 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-  // Email stats
-  getStats: () => request('/emails/stats'),
-  // Template CRUD
-  listTemplates: () => request('/templates'),
-  getTemplate: (id) => request(`/templates/${id}`),
-  createTemplate: (data) =>
-    request('/templates', { method: 'POST', body: JSON.stringify(data) }),
-  updateTemplate: (id, data) =>
-    request(`/templates/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  deleteTemplate: (id) =>
-    request(`/templates/${id}`, { method: 'DELETE' }),
 }

@@ -4,11 +4,9 @@ import { useAuth } from '../lib/auth-context'
 
 const nav = [
   { to: '/dashboard', label: 'Dashboard', icon: SquaresIcon },
-  { to: '/analytics', label: 'Analytics', icon: ChartIcon },
   { to: '/keys', label: 'API Keys', icon: KeyIcon },
   { to: '/send', label: 'Send Email', icon: SendIcon },
   { to: '/history', label: 'Mail History', icon: HistoryIcon },
-  { to: '/templates', label: 'Templates', icon: TemplateIcon },
   { to: '/pricing', label: 'Pricing', icon: PricingIcon },
   { to: '/profile', label: 'Profile', icon: UserIcon },
 ]
@@ -132,22 +130,6 @@ function UserIcon({ size = 16 }) {
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
       <circle cx="8" cy="5" r="3" stroke="currentColor" strokeWidth="1.2" />
       <path d="M2.5 14c.7-2.6 2.7-4 5.5-4s4.8 1.4 5.5 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function ChartIcon({ size = 16 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-      <path d="M2 14V3M6 14V7M10 14V5M14 14v-4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function TemplateIcon({ size = 16 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-      <path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1zM5 6h6M5 9h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

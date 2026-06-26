@@ -10,8 +10,6 @@ import SendEmail from './pages/SendEmail'
 import MailHistory from './pages/MailHistory'
 import Pricing from './pages/Pricing'
 import Profile from './pages/Profile'
-import Analytics from './pages/Analytics'
-import Templates from './pages/Templates'
 
 function ProtectedRoute({ children }) {
   const { isAuthed, loading, sessionExpired, clearSessionExpired } = useAuth()
@@ -27,14 +25,12 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/callback" element={<Callback />} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
       <Route path="/keys" element={<ProtectedRoute><APIKeys /></ProtectedRoute>} />
       <Route path="/send" element={<ProtectedRoute><SendEmail /></ProtectedRoute>} />
       <Route path="/history" element={<ProtectedRoute><MailHistory /></ProtectedRoute>} />
-      <Route path="/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
-      <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
     </Routes>
   )
 }
