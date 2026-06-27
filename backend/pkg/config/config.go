@@ -111,6 +111,10 @@ func Load() (*Config, error) {
 	if cfg.EmailProvider == ProviderSendGrid {
 		required["SENDGRID_KEY"] = cfg.SendGridKey
 	}
+	if cfg.EmailProvider == ProviderMailgun {
+		required["MAILGUN_DOMAIN"] = cfg.MailgunDomain
+		required["MAILGUN_KEY"] = cfg.MailgunKey
+	}
 
 	var missing []string
 	for k, v := range required {

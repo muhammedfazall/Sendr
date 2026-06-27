@@ -1,10 +1,8 @@
 package emailsender
 
 import (
-	"context"
 	"fmt"
 
-	"github.com/muhammedfazall/Sendr/internal/core/domain"
 	"github.com/muhammedfazall/Sendr/pkg/config"
 )
 
@@ -27,35 +25,6 @@ func NewSender(cfg *config.Config) (Sender, error) {
 	default:
 		return nil, fmt.Errorf("unknown email provider: %q", cfg.EmailProvider)
 	}
-}
-
-// compile-time check: *MailgunSender implements Sender.
-var _ Sender = (*MailgunSender)(nil)
-
-// MailgunSender sends emails via the Mailgun REST API.
-type MailgunSender struct {
-	domain    string
-	apiKey    string
-	baseURL   string
-	fromEmail string
-	fromName  string
-}
-
-func NewMailgun(domain, apiKey, baseURL, fromEmail, fromName string) *MailgunSender {
-	if baseURL == "" {
-		baseURL = "https://api.mailgun.net/v3"
-	}
-	return &MailgunSender{
-		domain:    domain,
-		apiKey:    apiKey,
-		baseURL:   baseURL,
-		fromEmail: fromEmail,
-		fromName:  fromName,
-	}
-}
-
-func (s *MailgunSender) Send(ctx context.Context, email *domain.EmailPayload) (*SendResult, error) {
-	return nil, fmt.Errorf("MailgunSender: not yet implemented")
 }
 
 
