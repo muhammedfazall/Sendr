@@ -5,7 +5,6 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -26,16 +25,16 @@ type AuthService struct {
 }
 
 // NewAuthService wires up the auth service with its dependencies.
-func NewAuthService(users ports.UserRepository, tokens ports.TokenStore, cfg *config.Config) *AuthService {
+func NewAuthService(users ports.UserRepository, tokens ports.TokenStore, cfg *config.Config) (*AuthService, error) {
 	keyBytes, err := cfg.JWTPrivateKeyBytes()
 	if err != nil {
-		log.Fatalf("load private key: %v", err)
+		return nil, fmt.Errorf("load private key: %w", err)
 	}
 	pk, err := jwt.ParseRSAPrivateKeyFromPEM(keyBytes)
 	if err != nil {
-		log.Fatalf("parse private key: %v", err)
+		return nil, fmt.Errorf("parse private key: %w", err)
 	}
-	return &AuthService{users: users, tokens: tokens, cfg: cfg, privateKey: pk}
+	return &AuthService{users: users, tokens: tokens, cfg: cfg, privateKey: pk}, nil
 }
 
 func (s *AuthService) oauthCfg() *oauth2.Config {

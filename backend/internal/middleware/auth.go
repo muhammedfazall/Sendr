@@ -3,7 +3,7 @@ package middleware
 import (
 	"context"
 	"crypto/subtle"
-	"log"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -20,14 +20,14 @@ type contextKey string
 
 const UserClaimsKey contextKey = "userClaims"
 
-func JWTAuth(cfg *config.Config, tokens ports.TokenStore) func(http.Handler) http.Handler {
+func JWTAuth(cfg *config.Config, tokens ports.TokenStore) (func(http.Handler) http.Handler, error) {
 	keyBytes, err := cfg.JWTPublicKeyBytes()
 	if err != nil {
-		log.Fatalf("cannot load JWT public key: %v", err)
+		return nil, fmt.Errorf("load JWT public key: %w", err)
 	}
 	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyBytes)
 	if err != nil {
-		log.Fatalf("cannot parse JWT public key: %v", err)
+		return nil, fmt.Errorf("parse JWT public key: %w", err)
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -79,7 +79,7 @@ func JWTAuth(cfg *config.Config, tokens ports.TokenStore) func(http.Handler) htt
 			ctx := context.WithValue(r.Context(), UserClaimsKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
-	}
+	}, nil
 }
 
 // ValidateAPIKey middleware for routes that accept API keys instead of JWT

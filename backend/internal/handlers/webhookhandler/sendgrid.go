@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
+	"github.com/muhammedfazall/Sendr/internal/middleware"
 )
 
 // jobLookupper finds a job by its provider-side message ID.
@@ -34,14 +34,14 @@ func (h *SendGridHandler) Handle() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			log.Printf("sendgrid webhook: read body: %v", err)
+			middleware.Logger(r).Error("sendgrid webhook: read body", "err", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
 		var raw []map[string]any
 		if err := json.Unmarshal(body, &raw); err != nil {
-			log.Printf("sendgrid webhook: unmarshal: %v", err)
+			middleware.Logger(r).Error("sendgrid webhook: unmarshal", "err", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -85,6 +85,6 @@ func (h *SendGridHandler) storeEvent(r *http.Request, raw map[string]any) {
 	}
 
 	if err := h.events.Store(r.Context(), ev); err != nil {
-		log.Printf("sendgrid webhook: store event %s: %v", sgEventID, err)
+		middleware.Logger(r).Error("sendgrid webhook: store event", "sg_event_id", sgEventID, "err", err)
 	}
 }

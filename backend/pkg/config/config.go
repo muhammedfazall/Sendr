@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"net/url"
 	"os"
@@ -9,6 +10,21 @@ import (
 
 	"github.com/joho/godotenv"
 )
+
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToLower(s) {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
 
 // EmailProvider enumerates supported email sending backends.
 const (
@@ -51,6 +67,8 @@ type Config struct {
 	RazorpayKeySecret     string
 	RazorpayWebhookSecret string
 	AllowedOrigins        []string
+	LogLevel              string
+	LogLevelParsed        slog.Level
 }
 
 func Load() (*Config, error) {
@@ -58,6 +76,8 @@ func Load() (*Config, error) {
 	if appEnv != "production" {
 		_ = godotenv.Load()
 	}
+
+	logLevel := getEnvOrDefault("LOG_LEVEL", "info")
 
 	cfg := &Config{
 		AppEnv:                appEnv,
@@ -89,6 +109,8 @@ func Load() (*Config, error) {
 		Port:                  getEnvOrDefault("PORT", "8080"),
 		BackendURL:            getEnvOrDefault("BACKEND_URL", "http://localhost:8080"),
 		AllowedOrigins:        splitCSV(getEnvOrDefault("ALLOWED_ORIGINS", getEnvOrDefault("FRONTEND_URL", "http://localhost:5173"))),
+		LogLevel:              logLevel,
+		LogLevelParsed:        parseLogLevel(logLevel),
 	}
 
 	// Validate email provider

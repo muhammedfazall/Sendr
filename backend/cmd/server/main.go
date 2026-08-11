@@ -1,7 +1,8 @@
 package main
 
 import (
-	"log"
+	"log/slog"
+	"os"
 
 	"github.com/muhammedfazall/Sendr/internal/app"
 )
@@ -9,10 +10,12 @@ import (
 func main() {
 	a, err := app.New()
 	if err != nil {
-		log.Fatal("failed to initialize app:", err)
+		slog.Error("failed to initialize app", "err", err)
+		os.Exit(1)
 	}
 
 	if err := a.Run(); err != nil {
-		log.Fatal("app error:", err)
+		slog.Error("app error", "err", err)
+		os.Exit(1)
 	}
 }

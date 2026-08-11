@@ -7,7 +7,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -29,15 +28,15 @@ type Handler struct {
 	jwtPublicKey     *rsa.PublicKey
 }
 
-func New(svc ports.AuthService, cfg *config.Config) *Handler {
+func New(svc ports.AuthService, cfg *config.Config) (*Handler, error) {
 	keyBytes, err := cfg.JWTPublicKeyBytes()
 	if err != nil {
-		log.Fatalf("cannot load JWT public key: %v", err)
+		return nil, fmt.Errorf("load JWT public key: %w", err)
 	}
 
 	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyBytes)
 	if err != nil {
-		log.Fatalf("cannot parse JWT public key: %v", err)
+		return nil, fmt.Errorf("parse JWT public key: %w", err)
 	}
 
 	return &Handler{
@@ -46,7 +45,7 @@ func New(svc ports.AuthService, cfg *config.Config) *Handler {
 		oauthStateSecret: cfg.OAuthStateSecret,
 		secureCookie:     cfg.AppEnv == "production",
 		jwtPublicKey:     publicKey,
-	}
+	}, nil
 }
 
 // GET /auth/google

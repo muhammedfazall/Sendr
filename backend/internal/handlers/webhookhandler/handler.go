@@ -6,10 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
+	"github.com/muhammedfazall/Sendr/internal/middleware"
 	"github.com/muhammedfazall/Sendr/pkg/config"
 )
 
@@ -38,7 +38,7 @@ func (h *Handler) Handle() http.HandlerFunc {
 		expectedSig := hex.EncodeToString(mac.Sum(nil))
 
 		if !hmac.Equal([]byte(expectedSig), []byte(receivedSig)) {
-			log.Println("webhook: invalid signature")
+			middleware.Logger(r).Warn("webhook: invalid signature")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -58,7 +58,7 @@ func (h *Handler) Handle() http.HandlerFunc {
 		}
 
 		if err := json.Unmarshal(body, &event); err != nil {
-			log.Printf("webhook: unmarshal error: %v", err)
+			middleware.Logger(r).Error("webhook: unmarshal error", "err", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -74,7 +74,7 @@ func (h *Handler) Handle() http.HandlerFunc {
 		// Find our payment record
 		payment, err := h.payments.FindByOrderID(r.Context(), orderID)
 		if err != nil {
-			log.Printf("webhook: payment not found for order %s: %v", orderID, err)
+			middleware.Logger(r).Warn("webhook: payment not found for order", "order_id", orderID, "err", err)
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -87,18 +87,18 @@ func (h *Handler) Handle() http.HandlerFunc {
 
 		// Mark paid and upgrade plan
 		if err := h.payments.MarkPaid(r.Context(), orderID, paymentID, "webhook"); err != nil {
-			log.Printf("webhook: mark paid failed: %v", err)
+			middleware.Logger(r).Error("webhook: mark paid failed", "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
 		if err := h.users.UpdatePlan(r.Context(), payment.UserID, payment.PlanName); err != nil {
-			log.Printf("webhook: upgrade plan failed: %v", err)
+			middleware.Logger(r).Error("webhook: upgrade plan failed", "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
-		log.Printf("webhook: upgraded user %s to %s via webhook", payment.UserID, payment.PlanName)
+		middleware.Logger(r).Info("webhook: upgraded user", "user_id", payment.UserID, "plan", payment.PlanName)
 		w.WriteHeader(http.StatusOK)
 	}
 }

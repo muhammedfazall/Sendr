@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -38,6 +37,10 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("config load: %w", err)
 	}
 
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: cfg.LogLevelParsed,
+	}))
+
 	pool, err := db.Connect(cfg.DBUrl)
 	if err != nil {
 		return nil, fmt.Errorf("db connect: %w", err)
@@ -53,8 +56,8 @@ func New() (*App, error) {
 		cfg:    cfg,
 		pool:   pool,
 		rdb:    rdb,
-		bus:    eventbus.New(64),
-		logger: slog.New(slog.NewJSONHandler(os.Stdout, nil)),
+		bus:    eventbus.New(64, logger.With("component", "eventbus")),
+		logger: logger,
 	}, nil
 }
 
@@ -79,26 +82,32 @@ func (a *App) startWorker(ctx context.Context) error {
 		return fmt.Errorf("create email sender: %w", err)
 	}
 	jobRepo := jobrepo.New(a.pool)
-	a.worker = worker.New(jobRepo, sender, a.bus, a.logger, a.cfg.BackendURL, a.cfg.UnsubscribeSecret)
+	a.worker = worker.New(jobRepo, sender, a.bus, a.logger.With("component", "worker"), a.cfg.BackendURL, a.cfg.UnsubscribeSecret)
 	go a.bus.Run(ctx)
 	go a.worker.Run(ctx)
-	log.Println("worker started")
+	a.logger.Info("worker started")
 	return nil
 }
 
 func (a *App) startServer() error {
+	mux, err := router.New(a.cfg, a.pool, a.rdb, a.logger.With("component", "http"))
+	if err != nil {
+		return fmt.Errorf("router setup: %w", err)
+	}
+
 	a.server = &http.Server{
 		Addr:         ":" + a.cfg.Port,
-		Handler:      router.New(a.cfg, a.pool, a.rdb),
+		Handler:      mux,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {
-		log.Println("server starting on :" + a.cfg.Port)
+		a.logger.Info("server starting", "port", a.cfg.Port)
 		if err := a.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal("server error:", err)
+			a.logger.Error("server error", "err", err)
+			os.Exit(1)
 		}
 	}()
 	return nil
@@ -109,17 +118,17 @@ func (a *App) waitForShutdown() error {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("shutting down...")
+	a.logger.Info("shutting down")
 
 	httpCtx, httpCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer httpCancel()
 	if err := a.server.Shutdown(httpCtx); err != nil {
-		log.Println("http shutdown error:", err)
+		a.logger.Error("http shutdown error", "err", err)
 	}
 
 	a.pool.Close()
 	a.rdb.Close()
 
-	log.Println("server stopped cleanly")
+	a.logger.Info("server stopped cleanly")
 	return nil
 }

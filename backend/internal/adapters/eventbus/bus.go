@@ -2,7 +2,7 @@ package eventbus
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
@@ -19,17 +19,19 @@ type Bus struct {
 	mu       sync.RWMutex
 	handlers map[domain.EventType][]EventHandler
 	events   chan domain.Event
+	log      *slog.Logger
 }
 
 // New creates an event bus with the given channel buffer size.
 // A buffer of 64 is a reasonable default for most workloads.
-func New(bufSize int) *Bus {
+func New(bufSize int, log *slog.Logger) *Bus {
 	if bufSize <= 0 {
 		bufSize = 64
 	}
 	return &Bus{
 		handlers: make(map[domain.EventType][]EventHandler),
 		events:   make(chan domain.Event, bufSize),
+		log:      log,
 	}
 }
 
@@ -39,7 +41,7 @@ func (b *Bus) Publish(event domain.Event) {
 	select {
 	case b.events <- event:
 	default:
-		log.Printf("eventbus: channel full, dropping event %s", event.Type)
+		b.log.Warn("eventbus: channel full, dropping event", "type", event.Type)
 	}
 }
 
@@ -72,7 +74,7 @@ func (b *Bus) dispatch(ctx context.Context, event domain.Event) {
 
 	for _, h := range handlers {
 		if err := h(ctx, event); err != nil {
-			log.Printf("eventbus: handler error for %s: %v", event.Type, err)
+			b.log.Error("eventbus: handler error", "type", event.Type, "err", err)
 		}
 	}
 }

@@ -55,7 +55,11 @@ func authHandler(t *testing.T) *Handler {
 		JWTPublicKeyPEM:  string(pubPEM),
 		AppEnv:           "development",
 	}
-	return New(&mockAuthSvc{}, cfg)
+	h, err := New(&mockAuthSvc{}, cfg)
+	if err != nil {
+		t.Fatalf("New auth handler: %v", err)
+	}
+	return h
 }
 
 func signTokenPK(t *testing.T, pk *rsa.PrivateKey, claims jwt.MapClaims) string {
@@ -290,7 +294,10 @@ func TestRefreshSuccess(t *testing.T) {
 			return "new-access", "new-refresh", nil
 		},
 	}
-	h := New(svc, cfg)
+	h, err := New(svc, cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 
 	// Create an expired signed token for the Authorization header
 	claims := jwt.MapClaims{
@@ -360,7 +367,10 @@ func TestRefreshFailed(t *testing.T) {
 			return "", "", errors.New("invalid refresh")
 		},
 	}
-	h := New(svc, cfg)
+	h, err := New(svc, cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 
 	claims := jwt.MapClaims{
 		"user_id": "user-1",

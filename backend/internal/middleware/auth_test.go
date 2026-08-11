@@ -88,7 +88,10 @@ func TestJWTAuthValidToken(t *testing.T) {
 	pk, cfg := testJWTSetup(t)
 	tokens := &mockTokenStore{blacklisted: make(map[string]bool)}
 
-	mw := JWTAuth(cfg, tokens)
+	mw, err := JWTAuth(cfg, tokens)
+	if err != nil {
+		t.Fatalf("JWTAuth: %v", err)
+	}
 	handler := mw(testHandler())
 
 	token := signTestToken(t, pk, "user-123")
@@ -110,7 +113,10 @@ func TestJWTAuthMissingHeader(t *testing.T) {
 	_, cfg := testJWTSetup(t)
 	tokens := &mockTokenStore{blacklisted: make(map[string]bool)}
 
-	mw := JWTAuth(cfg, tokens)
+	mw, err := JWTAuth(cfg, tokens)
+	if err != nil {
+		t.Fatalf("JWTAuth: %v", err)
+	}
 	handler := mw(testHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -127,7 +133,10 @@ func TestJWTAuthInvalidToken(t *testing.T) {
 	_, cfg := testJWTSetup(t)
 	tokens := &mockTokenStore{blacklisted: make(map[string]bool)}
 
-	mw := JWTAuth(cfg, tokens)
+	mw, err := JWTAuth(cfg, tokens)
+	if err != nil {
+		t.Fatalf("JWTAuth: %v", err)
+	}
 	handler := mw(testHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -145,7 +154,10 @@ func TestJWTAuthBlacklistedToken(t *testing.T) {
 	pk, cfg := testJWTSetup(t)
 	tokens := &mockTokenStore{blacklisted: make(map[string]bool)}
 
-	mw := JWTAuth(cfg, tokens)
+	mw, err := JWTAuth(cfg, tokens)
+	if err != nil {
+		t.Fatalf("JWTAuth: %v", err)
+	}
 	handler := mw(testHandler())
 
 	token := signTestToken(t, pk, "user-123")
@@ -167,7 +179,10 @@ func TestJWTAuthWrongIssuer(t *testing.T) {
 	pk, cfg := testJWTSetup(t)
 	tokens := &mockTokenStore{blacklisted: make(map[string]bool)}
 
-	mw := JWTAuth(cfg, tokens)
+	mw, err := JWTAuth(cfg, tokens)
+	if err != nil {
+		t.Fatalf("JWTAuth: %v", err)
+	}
 	handler := mw(testHandler())
 
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
@@ -197,7 +212,10 @@ func TestJWTAuthExpiredToken(t *testing.T) {
 	pk, cfg := testJWTSetup(t)
 	tokens := &mockTokenStore{blacklisted: make(map[string]bool)}
 
-	mw := JWTAuth(cfg, tokens)
+	mw, err := JWTAuth(cfg, tokens)
+	if err != nil {
+		t.Fatalf("JWTAuth: %v", err)
+	}
 	handler := mw(testHandler())
 
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
@@ -255,7 +273,10 @@ func TestJWTAuthWrongSigningMethod(t *testing.T) {
 	_, cfg := testJWTSetup(t)
 	tokens := &mockTokenStore{blacklisted: make(map[string]bool)}
 
-	mw := JWTAuth(cfg, tokens)
+	mw, err := JWTAuth(cfg, tokens)
+	if err != nil {
+		t.Fatalf("JWTAuth: %v", err)
+	}
 	handler := mw(testHandler())
 
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{

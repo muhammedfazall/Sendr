@@ -2,7 +2,6 @@ package mehandler
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 
@@ -88,7 +87,7 @@ func (h *Handler) usageSnapshot(r *http.Request, userID string, dailyLimit int) 
 
 	count, err := h.limiter.GetCount(r.Context(), userID)
 	if err != nil {
-		log.Printf("mehandler: failed to read usage count for %s: %v", userID, err)
+		middleware.Logger(r).Error("failed to read usage count", "user_id", userID, "err", err)
 		return usageToday, remaining
 	}
 

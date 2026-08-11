@@ -1,6 +1,8 @@
 package router
 
 import (
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 
@@ -33,10 +35,10 @@ import (
 	"github.com/muhammedfazall/Sendr/pkg/config"
 )
 
-func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
+func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client, log *slog.Logger) (*chi.Mux, error) {
 	r := chi.NewRouter()
 	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.Logger)
+	r.Use(middleware.StructuredLogger(log))
 	r.Use(chimiddleware.Recoverer)
 
 	// CORS — allow requests from the React dev server
@@ -56,14 +58,20 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	unsubRepo := unsubrepo.New(pool)
 
 	// Core services
-	authSvc := services.NewAuthService(userRepo, tokenStore, cfg)
+	authSvc, err := services.NewAuthService(userRepo, tokenStore, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("auth service: %w", err)
+	}
 	apiKeySvc := services.NewAPIKeyService(keyRepo, userRepo)
 	emailSvc := services.NewEmailService(apiKeySvc, jobRepo, userRepo, limiter)
 	paymentSvc := services.NewPaymentService(paymentRepo, planRepo, userRepo, cfg)
 	templateSvc := services.NewTemplateService(templateRepo)
 
 	// Handlers
-	authH := authhandler.New(authSvc, cfg)
+	authH, err := authhandler.New(authSvc, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("auth handler: %w", err)
+	}
 	apikeyH := apikeyhandler.New(apiKeySvc)
 	emailH := emailhandler.New(emailSvc, jobRepo, emailEventRepo, templateSvc)
 	meH := mehandler.New(userRepo, limiter)
@@ -90,7 +98,10 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	})
 
 	// JWT-protected routes
-	jwtMW := middleware.JWTAuth(cfg, tokenStore)
+	jwtMW, err := middleware.JWTAuth(cfg, tokenStore)
+	if err != nil {
+		return nil, fmt.Errorf("JWT auth middleware: %w", err)
+	}
 	r.With(jwtMW).Post("/auth/logout", authH.Logout())
 	r.With(jwtMW).Get("/me", meH.Get())
 	r.With(jwtMW).Patch("/me", meH.Update())
@@ -117,7 +128,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client) *chi.Mux {
 	r.With(jwtMW).Patch("/templates/{id}", templateH.Update())
 	r.With(jwtMW).Delete("/templates/{id}", templateH.Delete())
 
-	return r
+	return r, nil
 }
 
 func maxBodyBytes(limit int64) func(http.Handler) http.Handler {
