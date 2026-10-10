@@ -42,5 +42,3 @@ frontend/*.local
 *.njsproj
 *.sln
 *.sw?
-
-phased_upgrade_roadmap.md
