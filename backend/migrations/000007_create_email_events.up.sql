@@ -4,7 +4,7 @@ CREATE TABLE email_events (
     event_type    TEXT NOT NULL,
     sg_event_id   TEXT,
     sg_message_id TEXT,
-    job_id        TEXT REFERENCES jobs(id),
+    job_id        UUID REFERENCES jobs(id),
     timestamp     TIMESTAMPTZ NOT NULL,
     metadata      JSONB DEFAULT '{}',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()

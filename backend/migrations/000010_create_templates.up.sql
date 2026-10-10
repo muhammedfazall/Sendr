@@ -1,6 +1,6 @@
 CREATE TABLE templates (
     id               TEXT PRIMARY KEY,
-    user_id          TEXT NOT NULL REFERENCES users(id),
+    user_id          UUID NOT NULL REFERENCES users(id),
     name             TEXT NOT NULL,
     subject_template TEXT NOT NULL DEFAULT '',
     html_template    TEXT NOT NULL DEFAULT '',
