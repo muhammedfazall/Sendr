@@ -5,12 +5,11 @@ const allowedHosts = new Set([
   'sendr-api.onrender.com',
 ])
 
-export function getApiBaseUrl() {
-  const raw = import.meta.env.VITE_API_URL
+const PROD_API_URL = 'https://sendr-api.onrender.com'
+const DEV_API_URL = 'http://localhost:8080'
 
-  if (!raw) {
-    throw new Error('VITE_API_URL is required')
-  }
+export function getApiBaseUrl() {
+  const raw = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? PROD_API_URL : DEV_API_URL)
 
   const url = new URL(raw)
 
