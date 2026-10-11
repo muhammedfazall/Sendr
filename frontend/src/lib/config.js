@@ -2,7 +2,7 @@ const allowedHosts = new Set([
   'localhost:8080',
   '127.0.0.1:8080',
   'sendr.app',
-  'https://sendr-api.onrender.com',
+  'sendr-api.onrender.com',
 ])
 
 export function getApiBaseUrl() {
