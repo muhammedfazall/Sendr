@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/go-chi/chi/v5"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
@@ -35,14 +35,16 @@ import (
 	"github.com/muhammedfazall/Sendr/pkg/config"
 )
 
-func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client, log *slog.Logger) (*chi.Mux, error) {
-	r := chi.NewRouter()
-	r.Use(chimiddleware.RequestID)
-	r.Use(middleware.StructuredLogger(log))
-	r.Use(chimiddleware.Recoverer)
+func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client, log *slog.Logger) (*gin.Engine, error) {
+	if cfg.AppEnv == "production" {
+		gin.SetMode(gin.ReleaseMode)
+	}
 
-	// CORS — allow requests from the React dev server
-	r.Use(corsMiddleware(cfg.AllowedOrigins))
+	r := gin.New()
+	r.Use(middleware.RequestID())
+	r.Use(middleware.StructuredLogger(log))
+	r.Use(gin.Recovery())
+	r.Use(cors.New(corsConfig(cfg.AllowedOrigins)))
 	r.Use(maxBodyBytes(1 << 20))
 
 	// Adapters
@@ -78,99 +80,79 @@ func New(cfg *config.Config, pool *pgxpool.Pool, rdb *redis.Client, log *slog.Lo
 	healthH := health.NewHandler(health.NewService(pool, rdb))
 	paymentH := paymenthandler.New(paymentSvc)
 	webhookH := webhookhandler.New(paymentRepo, userRepo, cfg)
-	sgWebhookH := webhookhandler.NewSendGridHandler(emailEventRepo, jobRepo)
+	sendgridH := webhookhandler.NewSendGridHandler(emailEventRepo, jobRepo)
 	templateH := templatehandler.New(templateRepo)
 	unsubH := unsubhandler.New(unsubRepo, cfg.UnsubscribeSecret)
 
-	// Routes
-	r.Get("/health", healthH.Check())
-	r.Get("/plans", paymentH.ListPlans())
-	r.Post("/webhooks/razorpay", webhookH.Handle())
-	r.Post("/webhooks/sendgrid", sgWebhookH.Handle())
+	// Public routes
+	r.GET("/health", healthH.Check)
+	r.GET("/plans", paymentH.ListPlans)
+	r.POST("/webhooks/razorpay", webhookH.Handle)
+	r.POST("/webhooks/sendgrid", sendgridH.Handle)
 
-	// Auth routes — rate-limited to prevent abuse.
-	r.Group(func(r chi.Router) {
-		r.Use(chimiddleware.Throttle(10))
-		r.Get("/auth/google", authH.Login())
-		r.Get("/auth/google/callback", authH.Callback())
-		r.Get("/auth/token", authH.Token())
-		r.Post("/auth/refresh", authH.Refresh())
-	})
+	// Auth routes — throttled to blunt brute-force / login floods.
+	auth := r.Group("", middleware.Throttle(10))
+	auth.GET("/auth/google", authH.Login)
+	auth.GET("/auth/google/callback", authH.Callback)
+	auth.GET("/auth/token", authH.Token)
+	auth.POST("/auth/refresh", authH.Refresh)
 
 	// JWT-protected routes
 	jwtMW, err := middleware.JWTAuth(cfg, tokenStore)
 	if err != nil {
 		return nil, fmt.Errorf("JWT auth middleware: %w", err)
 	}
-	r.With(jwtMW).Post("/auth/logout", authH.Logout())
-	r.With(jwtMW).Get("/me", meH.Get())
-	r.With(jwtMW).Patch("/me", meH.Update())
-	r.With(jwtMW).Post("/apikeys", apikeyH.Create())
-	r.With(jwtMW).Get("/apikeys", apikeyH.List())
-	r.With(jwtMW).Delete("/apikeys/{id}", apikeyH.Revoke())
-	r.With(jwtMW).Get("/emails", emailH.List())
-	r.With(jwtMW).Get("/emails/stats", emailH.Stats())
-	r.With(jwtMW).Post("/payments/orders", paymentH.CreateOrder())
-	r.With(jwtMW).Post("/payments/verify", paymentH.VerifyPayment())
+	protected := r.Group("/", jwtMW)
+	protected.POST("/auth/logout", authH.Logout)
+	protected.GET("/me", meH.Get)
+	protected.PATCH("/me", meH.Update)
+	protected.POST("/apikeys", apikeyH.Create)
+	protected.GET("/apikeys", apikeyH.List)
+	protected.DELETE("/apikeys/:id", apikeyH.Revoke)
+	protected.GET("/emails", emailH.List)
+	protected.GET("/emails/stats", emailH.Stats)
+	protected.POST("/payments/orders", paymentH.CreateOrder)
+	protected.POST("/payments/verify", paymentH.VerifyPayment)
+	protected.POST("/templates", templateH.Create)
+	protected.GET("/templates", templateH.List)
+	protected.GET("/templates/:id", templateH.Get)
+	protected.PATCH("/templates/:id", templateH.Update)
+	protected.DELETE("/templates/:id", templateH.Delete)
 
+	// API-key protected routes
 	apiKey := middleware.ValidateAPIKey(pool)
-	r.With(apiKey).Post("/emails/send", emailH.Send())
-	r.With(apiKey).Get("/emails/{id}", emailH.GetJob())
+	r.POST("/emails/send", apiKey, emailH.Send)
+	r.GET("/emails/:id", apiKey, emailH.GetJob)
 
 	// Unsubscribe — no auth required; the token in the query string is the proof.
-	r.Get("/unsubscribe", unsubH.ServeHTTP)
-	r.Post("/unsubscribe", unsubH.ServeHTTP)
-
-	// Template CRUD — JWT required.
-	r.With(jwtMW).Post("/templates", templateH.Create())
-	r.With(jwtMW).Get("/templates", templateH.List())
-	r.With(jwtMW).Get("/templates/{id}", templateH.Get())
-	r.With(jwtMW).Patch("/templates/{id}", templateH.Update())
-	r.With(jwtMW).Delete("/templates/{id}", templateH.Delete())
+	r.GET("/unsubscribe", unsubH.Serve)
+	r.POST("/unsubscribe", unsubH.Serve)
 
 	return r, nil
 }
 
-func maxBodyBytes(limit int64) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r.Body = http.MaxBytesReader(w, r.Body, limit)
-			next.ServeHTTP(w, r)
-		})
+func maxBodyBytes(limit int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
+		c.Next()
 	}
 }
 
-// corsMiddleware allows the React dev server to call the API.
-func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
-	allowed := make(map[string]struct{}, len(allowedOrigins))
-
+// corsConfig allows the configured frontend origins to call the API with credentials.
+func corsConfig(allowedOrigins []string) cors.Config {
+	valid := make([]string, 0, len(allowedOrigins))
 	for _, origin := range allowedOrigins {
 		u, err := url.Parse(origin)
 		if err != nil || u.Scheme == "" || u.Host == "" || origin == "*" {
 			continue
 		}
-		allowed[origin] = struct{}{}
+		valid = append(valid, origin)
 	}
 
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			origin := r.Header.Get("Origin")
-
-			if _, ok := allowed[origin]; ok {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Vary", "Origin")
-				w.Header().Set("Access-Control-Allow-Credentials", "true")
-			}
-
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-
-			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-
-			next.ServeHTTP(w, r)
-		})
+	return cors.Config{
+		AllowOrigins:     valid,
+		AllowMethods:     []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Authorization", "Content-Type"},
+		AllowCredentials: true,
 	}
 }

@@ -26,5 +26,3 @@ func NewSender(cfg *config.Config) (Sender, error) {
 		return nil, fmt.Errorf("unknown email provider: %q", cfg.EmailProvider)
 	}
 }
-
-

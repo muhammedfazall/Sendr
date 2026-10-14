@@ -1,10 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth-context'
-import { getApiBaseUrl } from '../lib/config'
-
-const API = getApiBaseUrl()
-
+import {  } from '../lib/config'
 export default function Callback() {
   const { login } = useAuth()
   const navigate = useNavigate()

@@ -15,7 +15,7 @@ import (
 const maxAPIKeyCreateAttempts = 3
 
 type APIKeyService struct {
-	keys ports.APIKeyRepository
+	keys  ports.APIKeyRepository
 	users ports.UserRepository
 }
 
@@ -45,7 +45,7 @@ func (s *APIKeyService) Create(ctx context.Context, userID, name string) (string
 			return "", nil, fmt.Errorf("API key limit reached (%d/%d). Upgrade your plan", active, plan.MaxAPIKeys)
 		}
 	}
-	
+
 	for attempt := 0; attempt < maxAPIKeyCreateAttempts; attempt++ {
 		k, err := helper.GenerateAPIKey()
 		if err != nil {

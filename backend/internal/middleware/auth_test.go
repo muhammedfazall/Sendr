@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
 	"github.com/muhammedfazall/Sendr/pkg/config"
@@ -55,16 +56,25 @@ func testJWTSetup(t *testing.T) (*rsa.PrivateKey, *config.Config) {
 	return pk, cfg
 }
 
-func testHandler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := GetClaims(r)
+func testHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims, ok := GetClaims(c)
 		if !ok {
-			w.WriteHeader(http.StatusInternalServerError)
+			c.String(http.StatusInternalServerError, "no claims")
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(claims["user_id"].(string)))
-	})
+		c.String(http.StatusOK, claims["user_id"].(string))
+	}
+}
+
+// runMiddleware executes a middleware + terminal handler through a real gin engine.
+func runMiddleware(mw gin.HandlerFunc, handler gin.HandlerFunc, req *http.Request) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/", mw, handler)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
 }
 
 func signTestToken(t *testing.T, pk *rsa.PrivateKey, userID string) string {
@@ -92,14 +102,11 @@ func TestJWTAuthValidToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JWTAuth: %v", err)
 	}
-	handler := mw(testHandler())
 
 	token := signTestToken(t, pk, "user-123")
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
+	w := runMiddleware(mw, testHandler(), req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d. Body: %s", w.Code, w.Body.String())
@@ -117,12 +124,9 @@ func TestJWTAuthMissingHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JWTAuth: %v", err)
 	}
-	handler := mw(testHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
+	w := runMiddleware(mw, testHandler(), req)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -137,13 +141,10 @@ func TestJWTAuthInvalidToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JWTAuth: %v", err)
 	}
-	handler := mw(testHandler())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer invalid-token-here")
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
+	w := runMiddleware(mw, testHandler(), req)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -158,17 +159,13 @@ func TestJWTAuthBlacklistedToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JWTAuth: %v", err)
 	}
-	handler := mw(testHandler())
 
 	token := signTestToken(t, pk, "user-123")
-
 	tokens.blacklisted["test-jti"] = true
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
+	w := runMiddleware(mw, testHandler(), req)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for blacklisted token, got %d", w.Code)
@@ -183,7 +180,6 @@ func TestJWTAuthWrongIssuer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JWTAuth: %v", err)
 	}
-	handler := mw(testHandler())
 
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"user_id": "user-1",
@@ -199,9 +195,7 @@ func TestJWTAuthWrongIssuer(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
+	w := runMiddleware(mw, testHandler(), req)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for wrong issuer, got %d", w.Code)
@@ -216,12 +210,11 @@ func TestJWTAuthExpiredToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JWTAuth: %v", err)
 	}
-	handler := mw(testHandler())
 
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"user_id": "user-1",
 		"email":   "test@test.com",
-		"jti":     "test-jti-expired",
+		"jti":     "test-jti",
 		"iss":     "sendr",
 		"aud":     "sendr-api",
 		"exp":     time.Now().Add(-1 * time.Hour).Unix(),
@@ -232,9 +225,7 @@ func TestJWTAuthExpiredToken(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
+	w := runMiddleware(mw, testHandler(), req)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for expired token, got %d", w.Code)
@@ -242,16 +233,16 @@ func TestJWTAuthExpiredToken(t *testing.T) {
 }
 
 func TestGetClaimsFromContext(t *testing.T) {
-	claims := jwt.MapClaims{
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	c.Set(UserClaimsKey, jwt.MapClaims{
 		"user_id": "user-42",
 		"email":   "test@test.com",
-	}
+	})
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	ctx := context.WithValue(req.Context(), UserClaimsKey, claims)
-	req = req.WithContext(ctx)
-
-	got, ok := GetClaims(req)
+	got, ok := GetClaims(c)
 	if !ok {
 		t.Fatal("expected claims to be found")
 	}
@@ -261,11 +252,13 @@ func TestGetClaimsFromContext(t *testing.T) {
 }
 
 func TestGetClaimsMissing(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
 
-	_, ok := GetClaims(req)
+	_, ok := GetClaims(c)
 	if ok {
-		t.Fatal("expected no claims for request without context value")
+		t.Fatal("expected no claims for context without value")
 	}
 }
 
@@ -277,7 +270,6 @@ func TestJWTAuthWrongSigningMethod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JWTAuth: %v", err)
 	}
-	handler := mw(testHandler())
 
 	tok, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": "user-1",
@@ -293,9 +285,7 @@ func TestJWTAuthWrongSigningMethod(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, req)
+	w := runMiddleware(mw, testHandler(), req)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for wrong signing method, got %d", w.Code)

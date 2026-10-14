@@ -1,12 +1,10 @@
 package middleware
 
 import (
-	"context"
 	"crypto/subtle"
-	"fmt"
-	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
@@ -15,127 +13,125 @@ import (
 	"github.com/muhammedfazall/Sendr/pkg/response"
 )
 
-// contextKey is a custom type to avoid key collisions in context
-type contextKey string
+// UserClaimsKey is the gin context key holding the authenticated user's claims.
+const UserClaimsKey = "user_claims"
 
-const UserClaimsKey contextKey = "userClaims"
-
-func JWTAuth(cfg *config.Config, tokens ports.TokenStore) (func(http.Handler) http.Handler, error) {
+// JWTAuth validates the bearer JWT on protected routes.
+func JWTAuth(cfg *config.Config, tokens ports.TokenStore) (gin.HandlerFunc, error) {
 	keyBytes, err := cfg.JWTPublicKeyBytes()
 	if err != nil {
-		return nil, fmt.Errorf("load JWT public key: %w", err)
+		return nil, err
 	}
+
 	publicKey, err := jwt.ParseRSAPublicKeyFromPEM(keyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("parse JWT public key: %w", err)
+		return nil, err
 	}
 
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Step 1 — get the Authorization header
-			authHeader := r.Header.Get("Authorization")
-			if !strings.HasPrefix(authHeader, "Bearer ") {
-				response.Error(w, http.StatusUnauthorized, "missing_token", "missing token")
-				return
-			}
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			response.Error(c, 401, "missing_token", "missing token")
+			c.Abort()
+			return
+		}
 
-			// Step 2 — extract the token string
-			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
+			return publicKey, nil
+		}, jwt.WithAudience("sendr-api"), jwt.WithIssuer("sendr"))
 
-			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
-				// Make sure the signing method is RSA — reject anything else
-				if _, ok := t.Method.(*jwt.SigningMethodRSA); !ok {
-					return nil, jwt.ErrSignatureInvalid
-				}
-				return publicKey, nil
-			}, jwt.WithAudience("sendr-api"), jwt.WithIssuer("sendr"))
+		if err != nil || !token.Valid {
+			response.Error(c, 401, "invalid_token", "invalid token")
+			c.Abort()
+			return
+		}
 
-			if err != nil || !token.Valid {
-				response.Error(w, http.StatusUnauthorized, "invalid_token", "invalid token")
-				return
-			}
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			response.Error(c, 401, "invalid_token", "invalid token")
+			c.Abort()
+			return
+		}
+		jti, ok := claims["jti"].(string)
+		if !ok || jti == "" {
+			response.Error(c, 401, "invalid_token", "invalid token")
+			c.Abort()
+			return
+		}
 
-			// Step 4 — inject claims into request context
-			claims, ok := token.Claims.(jwt.MapClaims)
-			if !ok {
-				response.Error(w, http.StatusUnauthorized, "invalid_token", "invalid token")
-				return
-			}
-			jti, ok := claims["jti"].(string)
-			if !ok || jti == "" {
-				response.Error(w, http.StatusUnauthorized, "invalid_token", "invalid token")
-				return
-			}
-			blacklisted, err := tokens.IsAccessTokenBlacklisted(r.Context(), jti)
-			if err != nil {
-				response.Error(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication temporarily unavailable")
-				return
-			}
-			if blacklisted {
-				response.Error(w, http.StatusUnauthorized, "invalid_token", "invalid token")
-				return
-			}
+		blacklisted, err := tokens.IsAccessTokenBlacklisted(c.Request.Context(), jti)
+		if err != nil {
+			response.Error(c, 503, "auth_unavailable", "authentication temporarily unavailable")
+			c.Abort()
+			return
+		}
+		if blacklisted {
+			response.Error(c, 401, "invalid_token", "invalid token")
+			c.Abort()
+			return
+		}
 
-			ctx := context.WithValue(r.Context(), UserClaimsKey, claims)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
+		c.Set(UserClaimsKey, claims)
+		c.Next()
 	}, nil
 }
 
-// ValidateAPIKey middleware for routes that accept API keys instead of JWT
-func ValidateAPIKey(db *pgxpool.Pool) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if !strings.HasPrefix(authHeader, "Bearer ") {
-				response.Error(w, http.StatusUnauthorized, "missing_api_key", "missing api key")
-				return
-			}
+// ValidateAPIKey authenticates requests using an mk_live_ API key.
+func ValidateAPIKey(db *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			response.Error(c, 401, "missing_api_key", "missing api key")
+			c.Abort()
+			return
+		}
 
-			fullKey := strings.TrimPrefix(authHeader, "Bearer ")
+		fullKey := strings.TrimPrefix(authHeader, "Bearer ")
+		parts := strings.SplitN(fullKey, ".", 2)
+		if len(parts) != 2 {
+			response.Error(c, 401, "invalid_api_key", "invalid api key")
+			c.Abort()
+			return
+		}
 
-			// Split on "." to get prefix and secret
-			parts := strings.SplitN(fullKey, ".", 2)
-			if len(parts) != 2 {
-				response.Error(w, http.StatusUnauthorized, "invalid_api_key", "invalid api key")
-				return
-			}
+		prefix := strings.TrimPrefix(parts[0], "mk_live_")
+		secret := parts[1]
 
-			// Strip the "mk_live_" part to get the raw prefix
-			prefix := strings.TrimPrefix(parts[0], "mk_live_")
-			secret := parts[1]
+		var storedHash string
+		var userID string
+		err := db.QueryRow(c.Request.Context(),
+			`SELECT hashed_key, user_id FROM api_keys
+			 WHERE prefix = $1 AND revoked = false`,
+			prefix,
+		).Scan(&storedHash, &userID)
+		if err != nil {
+			response.Error(c, 401, "invalid_api_key", "invalid api key")
+			c.Abort()
+			return
+		}
 
-			// Look up by prefix
-			var storedHash string
-			var userID string
-			err := db.QueryRow(r.Context(),
-				`SELECT hashed_key, user_id FROM api_keys
-				 WHERE prefix = $1 AND revoked = false`,
-				prefix,
-			).Scan(&storedHash, &userID)
-			if err != nil {
-				response.Error(w, http.StatusUnauthorized, "invalid_api_key", "invalid api key")
-				return
-			}
+		incomingHash := helpers.HashSecret(secret)
+		if subtle.ConstantTimeCompare([]byte(incomingHash), []byte(storedHash)) != 1 {
+			response.Error(c, 401, "invalid_api_key", "invalid api key")
+			c.Abort()
+			return
+		}
 
-			// Hash the incoming secret and compare — constant time to prevent timing attacks
-			incomingHash := helpers.HashSecret(secret)
-			if subtle.ConstantTimeCompare([]byte(incomingHash), []byte(storedHash)) != 1 {
-				response.Error(w, http.StatusUnauthorized, "invalid_api_key", "invalid api key")
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), UserClaimsKey, jwt.MapClaims{
-				"user_id": userID,
-			})
-
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
+		c.Set(UserClaimsKey, jwt.MapClaims{"user_id": userID})
+		c.Next()
 	}
 }
 
-// handlers can easily get claims
-func GetClaims(r *http.Request) (jwt.MapClaims, bool) {
-	claims, ok := r.Context().Value(UserClaimsKey).(jwt.MapClaims)
+// GetClaims returns the claims injected by JWTAuth or ValidateAPIKey.
+func GetClaims(c *gin.Context) (jwt.MapClaims, bool) {
+	v, ok := c.Get(UserClaimsKey)
+	if !ok {
+		return nil, false
+	}
+	claims, ok := v.(jwt.MapClaims)
 	return claims, ok
 }

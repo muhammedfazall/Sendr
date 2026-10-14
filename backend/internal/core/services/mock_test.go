@@ -9,15 +9,13 @@ import (
 	"github.com/muhammedfazall/Sendr/pkg/helpers"
 )
 
-
-
-func errNotFound(name string) error  { return errors.New(name + " not found") }
-func errRevoked() error              { return errors.New("api key is revoked") }
-func errLimit() error                { return errors.New("api key limit reached") }
-func errAlreadyOnPlan() error        { return errors.New("you are already on the") }
-func errNoPrice() error              { return errors.New("no price configured") }
-func errInvalidSig() error           { return errors.New("invalid payment signature") }
-func errSignature() error            { return errors.New("signature") }
+func errNotFound(name string) error { return errors.New(name + " not found") }
+func errRevoked() error             { return errors.New("api key is revoked") }
+func errLimit() error               { return errors.New("api key limit reached") }
+func errAlreadyOnPlan() error       { return errors.New("you are already on the") }
+func errNoPrice() error             { return errors.New("no price configured") }
+func errInvalidSig() error          { return errors.New("invalid payment signature") }
+func errSignature() error           { return errors.New("signature") }
 
 // ── In-memory mock implementations of all port interfaces ──
 
@@ -200,12 +198,12 @@ func (m *mockJobRepo) Enqueue(_ context.Context, userID, apiKeyID string, payloa
 		return nil, m.enqueueErr
 	}
 	j := domain.Job{
-		ID:        "job-" + userID,
-		UserID:    userID,
-		APIKeyID:  apiKeyID,
-		Payload:   payload,
-		Status:    "pending",
-		Retries:   0,
+		ID:         "job-" + userID,
+		UserID:     userID,
+		APIKeyID:   apiKeyID,
+		Payload:    payload,
+		Status:     "pending",
+		Retries:    0,
 		MaxRetries: 3,
 	}
 	m.jobs = append(m.jobs, j)
@@ -429,9 +427,9 @@ func newMockDeps() *mockDeps {
 func (m *mockDeps) addUserWithPlan(planName string) *domain.User {
 	plan, _ := m.plans.FindByName(nil, planName)
 	user := &domain.User{
-		ID:    "user-test-" + planName,
-		Email: "test@" + planName + ".com",
-		Name:  "Test " + planName,
+		ID:     "user-test-" + planName,
+		Email:  "test@" + planName + ".com",
+		Name:   "Test " + planName,
 		PlanID: plan.ID,
 	}
 	m.users.users[user.ID] = user

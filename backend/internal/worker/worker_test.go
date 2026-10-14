@@ -47,7 +47,7 @@ func (m *mockRepo) ReclaimZombies(_ context.Context) (int64, error) {
 	}
 	return 0, nil
 }
-func (m *mockRepo) GetByID(_ context.Context, _ string) (*domain.Job, error)  { return nil, nil }
+func (m *mockRepo) GetByID(_ context.Context, _ string) (*domain.Job, error) { return nil, nil }
 func (m *mockRepo) ListByUser(_ context.Context, _ string, _ string, _, _ int) ([]domain.Job, error) {
 	return nil, nil
 }

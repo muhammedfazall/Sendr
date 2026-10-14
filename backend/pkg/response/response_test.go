@@ -5,20 +5,29 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
-func TestJSONWritesContentType(t *testing.T) {
+func newCtx() (*gin.Context, *httptest.ResponseRecorder) {
+	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
-	JSON(w, http.StatusOK, map[string]string{"hello": "world"})
+	c, _ := gin.CreateTestContext(w)
+	return c, w
+}
 
-	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("expected Content-Type application/json, got %q", ct)
+func TestJSONWritesContentType(t *testing.T) {
+	c, w := newCtx()
+	JSON(c, http.StatusOK, map[string]string{"hello": "world"})
+
+	if ct := w.Header().Get("Content-Type"); ct != "application/json; charset=utf-8" {
+		t.Fatalf("expected JSON content type, got %q", ct)
 	}
 }
 
 func TestJSONWritesStatusCode(t *testing.T) {
-	w := httptest.NewRecorder()
-	JSON(w, http.StatusCreated, "data")
+	c, w := newCtx()
+	JSON(c, http.StatusCreated, "data")
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected status 201, got %d", w.Code)
@@ -26,8 +35,8 @@ func TestJSONWritesStatusCode(t *testing.T) {
 }
 
 func TestJSONWritesBody(t *testing.T) {
-	w := httptest.NewRecorder()
-	JSON(w, http.StatusOK, "hello")
+	c, w := newCtx()
+	JSON(c, http.StatusOK, "hello")
 
 	var got string
 	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
@@ -39,8 +48,8 @@ func TestJSONWritesBody(t *testing.T) {
 }
 
 func TestErrorBodyStructure(t *testing.T) {
-	w := httptest.NewRecorder()
-	Error(w, http.StatusBadRequest, "bad_request", "something went wrong")
+	c, w := newCtx()
+	Error(c, http.StatusBadRequest, "bad_request", "something went wrong")
 
 	var body struct {
 		Code    string `json:"code"`
@@ -58,8 +67,8 @@ func TestErrorBodyStructure(t *testing.T) {
 }
 
 func TestErrorStatusCode(t *testing.T) {
-	w := httptest.NewRecorder()
-	Error(w, http.StatusUnauthorized, "unauthorized", "no access")
+	c, w := newCtx()
+	Error(c, http.StatusUnauthorized, "unauthorized", "no access")
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status 401, got %d", w.Code)
@@ -67,8 +76,8 @@ func TestErrorStatusCode(t *testing.T) {
 }
 
 func TestSuccessWrapsInData(t *testing.T) {
-	w := httptest.NewRecorder()
-	Success(w, http.StatusOK, "payload")
+	c, w := newCtx()
+	Success(c, http.StatusOK, "payload")
 
 	var body struct {
 		Data interface{} `json:"data"`
@@ -82,12 +91,12 @@ func TestSuccessWrapsInData(t *testing.T) {
 }
 
 func TestSuccessWithStruct(t *testing.T) {
-	w := httptest.NewRecorder()
+	c, w := newCtx()
 	type Item struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
 	}
-	Success(w, http.StatusOK, Item{ID: 1, Name: "test"})
+	Success(c, http.StatusOK, Item{ID: 1, Name: "test"})
 
 	var body struct {
 		Data Item `json:"data"`
@@ -114,8 +123,8 @@ func TestErrorStatusText(t *testing.T) {
 		{http.StatusServiceUnavailable, "503"},
 	}
 	for _, tt := range tests {
-		w := httptest.NewRecorder()
-		Error(w, tt.status, "err", "msg")
+		c, w := newCtx()
+		Error(c, tt.status, "err", "msg")
 		if w.Code != tt.status {
 			t.Errorf("Error(%s): expected status %d, got %d", tt.name, tt.status, w.Code)
 		}

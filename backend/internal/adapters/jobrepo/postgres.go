@@ -233,4 +233,3 @@ func (r *PostgresJobRepository) FindByProviderMessageID(ctx context.Context, pro
 	}
 	return &j, nil
 }
-
