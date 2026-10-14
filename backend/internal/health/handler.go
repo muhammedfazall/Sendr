@@ -3,6 +3,7 @@ package health
 import (
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"github.com/muhammedfazall/Sendr/pkg/response"
 )
 
@@ -17,15 +18,13 @@ func NewHandler(service *Service) *Handler {
 }
 
 // Check handles GET /health — returns the health status of all dependencies.
-func (h *Handler) Check() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		result := h.service.Check(r.Context())
+func (h *Handler) Check(c *gin.Context) {
+	result := h.service.Check(c.Request.Context())
 
-		status := http.StatusOK
-		if result.DB != "ok" || result.Redis != "ok" {
-			status = http.StatusServiceUnavailable
-		}
-
-		response.JSON(w, status, result)
+	status := http.StatusOK
+	if result.DB != "ok" || result.Redis != "ok" {
+		status = http.StatusServiceUnavailable
 	}
+
+	response.JSON(c, status, result)
 }

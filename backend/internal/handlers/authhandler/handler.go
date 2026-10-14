@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
@@ -49,207 +50,192 @@ func New(svc ports.AuthService, cfg *config.Config) (*Handler, error) {
 }
 
 // GET /auth/google
-func (h *Handler) Login() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		state := buildState(h.oauthStateSecret, r.UserAgent())
+func (h *Handler) Login(c *gin.Context) {
+	state := buildState(h.oauthStateSecret, c.Request.UserAgent())
 
-		http.SetCookie(w, &http.Cookie{
-			Name:     "oauth_state",
-			Value:    state,
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "oauth_state",
+		Value:    state,
+		MaxAge:   300,
+		HttpOnly: true,
+		Secure:   h.secureCookie,
+		SameSite: http.SameSiteLaxMode,
+		Path:     "/",
+	})
+
+	// Store CLI redirect_uri if present
+	if redirectURI := c.Query("redirect_uri"); redirectURI != "" {
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     "oauth_redirect_uri",
+			Value:    redirectURI,
 			MaxAge:   300,
 			HttpOnly: true,
 			Secure:   h.secureCookie,
 			SameSite: http.SameSiteLaxMode,
 			Path:     "/",
 		})
-
-		// Store CLI redirect_uri if present
-		if redirectURI := r.URL.Query().Get("redirect_uri"); redirectURI != "" {
-			http.SetCookie(w, &http.Cookie{
-				Name:     "oauth_redirect_uri",
-				Value:    redirectURI,
-				MaxAge:   300,
-				HttpOnly: true,
-				Secure:   h.secureCookie,
-				SameSite: http.SameSiteLaxMode,
-				Path:     "/",
-			})
-		}
-
-		http.Redirect(w, r, h.svc.GetAuthURL(state), http.StatusTemporaryRedirect)
 	}
+
+	c.Redirect(http.StatusTemporaryRedirect, h.svc.GetAuthURL(state))
 }
 
 // GET /auth/google/callback
-// Sets short-lived HttpOnly cookies for both tokens, then redirects to frontend.
-func (h *Handler) Callback() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Validate state
-		stateCookie, err := r.Cookie("oauth_state")
-		if err != nil || stateCookie.Value == "" {
-			http.Redirect(w, r,
-				fmt.Sprintf("%s/callback?error=missing_state", h.frontendURL),
-				http.StatusTemporaryRedirect)
-			return
-		}
-		queryState := r.URL.Query().Get("state")
-		if subtle.ConstantTimeCompare([]byte(stateCookie.Value), []byte(queryState)) != 1 ||
-			!validateState(h.oauthStateSecret, queryState, r.UserAgent()) {
-			http.Redirect(w, r,
-				fmt.Sprintf("%s/callback?error=invalid_state", h.frontendURL),
-				http.StatusTemporaryRedirect)
-			return
-		}
-
-		// Clear the state cookie
-		http.SetCookie(w, &http.Cookie{
-			Name: "oauth_state", Value: "", MaxAge: -1, Path: "/", Secure: h.secureCookie,
-		})
-
-		accessToken, refreshToken, err := h.svc.HandleCallback(r.Context(), r.URL.Query().Get("code"))
-		if err != nil {
-			http.Redirect(w, r,
-				fmt.Sprintf("%s/callback?error=auth_failed", h.frontendURL),
-				http.StatusTemporaryRedirect)
-			return
-		}
-
-		// Short-lived cookie so the frontend can pick up the access token once
-		http.SetCookie(w, &http.Cookie{
-			Name:     "auth_token",
-			Value:    accessToken,
-			MaxAge:   60,
-			HttpOnly: true,
-			SameSite: http.SameSiteNoneMode,
-			Path:     "/",
-			Secure:   h.secureCookie,
-		})
-
-		// Refresh token cookie — lasts 7 days, HttpOnly so JS can't touch it
-		http.SetCookie(w, &http.Cookie{
-			Name:     "refresh_token",
-			Value:    refreshToken,
-			MaxAge:   int(constants.RefreshTokenExpiry.Seconds()),
-			HttpOnly: true,
-			SameSite: http.SameSiteNoneMode,
-			Path:     "/auth", // only sent to /auth/* routes
-			Secure:   h.secureCookie,
-		})
-
-		// Redirect to CLI local server if present, otherwise frontend
-		redirectTo := fmt.Sprintf("%s/callback?token=%s", h.frontendURL, accessToken)
-		if c, err := r.Cookie("oauth_redirect_uri"); err == nil && c.Value != "" {
-			// Pass token directly in URL for CLI
-			redirectTo = fmt.Sprintf("%s?token=%s", c.Value, accessToken)
-			http.SetCookie(w, &http.Cookie{
-				Name: "oauth_redirect_uri", Value: "", MaxAge: -1, Path: "/", Secure: h.secureCookie,
-			})
-		}
-
-		http.Redirect(w, r, redirectTo, http.StatusTemporaryRedirect)
+// Sets short-lived cookies carrying the tokens, then redirects to the frontend/CLI.
+func (h *Handler) Callback(c *gin.Context) {
+	stateCookie, err := c.Cookie("oauth_state")
+	if err != nil || stateCookie == "" {
+		c.Redirect(http.StatusTemporaryRedirect,
+			fmt.Sprintf("%s/callback?error=missing_state", h.frontendURL))
+		return
 	}
+
+	queryState := c.Query("state")
+	if subtle.ConstantTimeCompare([]byte(stateCookie), []byte(queryState)) != 1 ||
+		!validateState(h.oauthStateSecret, queryState, c.Request.UserAgent()) {
+		c.Redirect(http.StatusTemporaryRedirect,
+			fmt.Sprintf("%s/callback?error=invalid_state", h.frontendURL))
+		return
+	}
+
+	// Clear the state cookie
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name: "oauth_state", Value: "", MaxAge: -1, Path: "/", Secure: h.secureCookie,
+	})
+
+	accessToken, refreshToken, err := h.svc.HandleCallback(c.Request.Context(), c.Query("code"))
+	if err != nil {
+		c.Redirect(http.StatusTemporaryRedirect,
+			fmt.Sprintf("%s/callback?error=auth_failed", h.frontendURL))
+		return
+	}
+
+	// Short-lived cookie so the frontend can pick up the access token once
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "auth_token",
+		Value:    accessToken,
+		MaxAge:   60,
+		HttpOnly: true,
+		SameSite: http.SameSiteNoneMode,
+		Path:     "/",
+		Secure:   h.secureCookie,
+	})
+
+	// Refresh token cookie — lasts 7 days, HttpOnly so JS can't touch it
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    refreshToken,
+		MaxAge:   int(constants.RefreshTokenExpiry.Seconds()),
+		HttpOnly: true,
+		SameSite: http.SameSiteNoneMode,
+		Path:     "/auth", // only sent to /auth/* routes
+		Secure:   h.secureCookie,
+	})
+
+	// Redirect to CLI local server if present, otherwise frontend
+	redirectTo := fmt.Sprintf("%s/callback?token=%s", h.frontendURL, accessToken)
+	if cliRedirect, cerr := c.Cookie("oauth_redirect_uri"); cerr == nil && cliRedirect != "" {
+		// Pass token directly in URL for CLI
+		redirectTo = fmt.Sprintf("%s?token=%s", cliRedirect, accessToken)
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name: "oauth_redirect_uri", Value: "", MaxAge: -1, Path: "/", Secure: h.secureCookie,
+		})
+	}
+
+	c.Redirect(http.StatusTemporaryRedirect, redirectTo)
 }
 
 // GET /auth/token — exchanges the one-time HttpOnly auth_token cookie for a JSON response.
 // Called by the frontend Callback page immediately after the OAuth redirect.
-func (h *Handler) Token() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie("auth_token")
-		if err != nil || cookie.Value == "" {
-			response.Error(w, http.StatusUnauthorized, "no_token", "no auth token")
-			return
-		}
-
-		// Clear the cookie immediately — one-time use
-		http.SetCookie(w, &http.Cookie{
-			Name: "auth_token", Value: "", MaxAge: -1, Path: "/", Secure: h.secureCookie,
-		})
-
-		response.JSON(w, http.StatusOK, map[string]string{
-			"token": cookie.Value,
-		})
+func (h *Handler) Token(c *gin.Context) {
+	token, err := c.Cookie("auth_token")
+	if err != nil || token == "" {
+		response.Error(c, http.StatusUnauthorized, "no_token", "no auth token")
+		return
 	}
+
+	// Clear the cookie immediately — one-time use
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name: "auth_token", Value: "", MaxAge: -1, Path: "/", Secure: h.secureCookie,
+	})
+
+	response.JSON(c, http.StatusOK, map[string]string{
+		"token": token,
+	})
 }
 
 // POST /auth/refresh — issues a new access + refresh token pair.
 // The JWT (even if expired) is sent via Authorization header to identify the user.
-func (h *Handler) Refresh() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Read the refresh token from the HttpOnly cookie
-		refreshCookie, err := r.Cookie("refresh_token")
-		if err != nil || refreshCookie.Value == "" {
-			response.Error(w, http.StatusUnauthorized, "no_refresh_token", "refresh token missing")
-			return
-		}
-
-		// Verify the JWT signature and stable claims, while allowing expiry for refresh.
-		claims, err := extractExpiredClaims(r, h.jwtPublicKey)
-		if err != nil {
-			response.Error(w, http.StatusUnauthorized, "invalid_token", "cannot read claims from token")
-			return
-		}
-		userID, ok := claims["user_id"].(string)
-		if !ok || userID == "" {
-			response.Error(w, http.StatusUnauthorized, "invalid_claims", "user_id missing from token")
-			return
-		}
-
-		// Validate + rotate the refresh token
-		newAccess, newRefresh, err := h.svc.RefreshToken(r.Context(), userID, refreshCookie.Value)
-		if err != nil {
-			// Invalid/expired refresh → clear the cookie and force re-login
-			http.SetCookie(w, &http.Cookie{
-				Name: "refresh_token", Value: "", MaxAge: -1, Path: "/auth", Secure: h.secureCookie,
-			})
-			response.Error(w, http.StatusUnauthorized, "refresh_failed", "refresh token is invalid or expired")
-			return
-		}
-
-		// Set the new refresh token cookie
-		http.SetCookie(w, &http.Cookie{
-			Name:     "refresh_token",
-			Value:    newRefresh,
-			MaxAge:   int(constants.RefreshTokenExpiry.Seconds()),
-			HttpOnly: true,
-			SameSite: http.SameSiteStrictMode,
-			Path:     "/auth",
-			Secure:   h.secureCookie,
-		})
-
-		response.JSON(w, http.StatusOK, map[string]string{
-			"token": newAccess,
-		})
+func (h *Handler) Refresh(c *gin.Context) {
+	refreshToken, err := c.Cookie("refresh_token")
+	if err != nil || refreshToken == "" {
+		response.Error(c, http.StatusUnauthorized, "no_refresh_token", "refresh token missing")
+		return
 	}
-}
 
-// POST /auth/logout — deletes the refresh token and clears cookies.
-// Protected by JWT middleware so we know who's logging out.
-func (h *Handler) Logout() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := middleware.GetClaims(r)
-		if !ok {
-			response.Error(w, http.StatusUnauthorized, "unauthorized", "missing or invalid token")
-			return
-		}
-		userID, ok := claims["user_id"].(string)
-		if !ok || userID == "" {
-			response.Error(w, http.StatusUnauthorized, "unauthorized", "invalid token claims")
-			return
-		}
+	// Verify the JWT signature and stable claims, while allowing expiry for refresh.
+	claims, err := extractExpiredClaims(c.Request, h.jwtPublicKey)
+	if err != nil {
+		response.Error(c, http.StatusUnauthorized, "invalid_token", "cannot read claims from token")
+		return
+	}
+	userID, ok := claims["user_id"].(string)
+	if !ok || userID == "" {
+		response.Error(c, http.StatusUnauthorized, "invalid_claims", "user_id missing from token")
+		return
+	}
 
-		jti, _ := claims["jti"].(string)
-		if err := h.svc.Logout(r.Context(), userID, jti, accessTokenTTL(claims)); err != nil {
-			response.Error(w, http.StatusInternalServerError, "logout_failed", "could not log out")
-			return
-		}
-
-		// Clear the refresh token cookie
-		http.SetCookie(w, &http.Cookie{
+	// Validate + rotate the refresh token
+	newAccess, newRefresh, err := h.svc.RefreshToken(c.Request.Context(), userID, refreshToken)
+	if err != nil {
+		// Invalid/expired refresh → clear the cookie and force re-login
+		http.SetCookie(c.Writer, &http.Cookie{
 			Name: "refresh_token", Value: "", MaxAge: -1, Path: "/auth", Secure: h.secureCookie,
 		})
-
-		w.WriteHeader(http.StatusNoContent)
+		response.Error(c, http.StatusUnauthorized, "refresh_failed", "refresh token is invalid or expired")
+		return
 	}
+
+	// Set the new refresh token cookie
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    newRefresh,
+		MaxAge:   int(constants.RefreshTokenExpiry.Seconds()),
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/auth",
+		Secure:   h.secureCookie,
+	})
+
+	response.JSON(c, http.StatusOK, map[string]string{
+		"token": newAccess,
+	})
+}
+
+// POST /auth/logout — blacklists the access token and clears the refresh cookie.
+func (h *Handler) Logout(c *gin.Context) {
+	claims, ok := middleware.GetClaims(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "unauthorized", "missing claims")
+		return
+	}
+	userID, ok := claims["user_id"].(string)
+	if !ok || userID == "" {
+		response.Error(c, http.StatusUnauthorized, "unauthorized", "invalid token claims")
+		return
+	}
+
+	jti, _ := claims["jti"].(string)
+	if err := h.svc.Logout(c.Request.Context(), userID, jti, accessTokenTTL(claims)); err != nil {
+		response.Error(c, http.StatusInternalServerError, "logout_failed", "could not log out")
+		return
+	}
+
+	// Clear the refresh token cookie
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name: "refresh_token", Value: "", MaxAge: -1, Path: "/auth", Secure: h.secureCookie,
+	})
+
+	c.Status(http.StatusNoContent)
 }
 
 // extractExpiredClaims reads JWT claims without verifying expiry.

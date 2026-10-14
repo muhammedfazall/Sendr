@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 	"github.com/muhammedfazall/Sendr/internal/core/ports"
@@ -28,34 +29,31 @@ func NewSendGridHandler(events ports.EmailEventRepository, jobs jobLookupper) *S
 	return &SendGridHandler{events: events, jobs: jobs}
 }
 
-// Handle processes a SendGrid event POST.
-// SendGrid sends a JSON array of event objects.
-func (h *SendGridHandler) Handle() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			middleware.Logger(r).Error("sendgrid webhook: read body", "err", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		var raw []map[string]any
-		if err := json.Unmarshal(body, &raw); err != nil {
-			middleware.Logger(r).Error("sendgrid webhook: unmarshal", "err", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		for _, ev := range raw {
-			h.storeEvent(r, ev)
-		}
-
-		w.WriteHeader(http.StatusOK)
+// Handle receives SendGrid event notifications.
+func (h *SendGridHandler) Handle(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		middleware.Logger(c).Error("sendgrid webhook: read body", "err", err)
+		c.Status(http.StatusBadRequest)
+		return
 	}
+
+	var raw []map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		middleware.Logger(c).Error("sendgrid webhook: unmarshal error", "err", err)
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	for _, ev := range raw {
+		h.storeEvent(c, ev)
+	}
+
+	c.Status(http.StatusOK)
 }
 
 // storeEvent extracts, links to a job, and persists a single SendGrid event.
-func (h *SendGridHandler) storeEvent(r *http.Request, raw map[string]any) {
+func (h *SendGridHandler) storeEvent(c *gin.Context, raw map[string]any) {
 	email, _ := raw["email"].(string)
 	eventType, _ := raw["event"].(string)
 	sgEventID, _ := raw["sg_event_id"].(string)
@@ -78,13 +76,13 @@ func (h *SendGridHandler) storeEvent(r *http.Request, raw map[string]any) {
 
 	// Try to link this event to a job via SendGrid's message ID.
 	if sgMessageID != "" && h.jobs != nil {
-		job, err := h.jobs.FindByProviderMessageID(r.Context(), sgMessageID)
+		job, err := h.jobs.FindByProviderMessageID(c.Request.Context(), sgMessageID)
 		if err == nil && job != nil {
 			ev.JobID = job.ID
 		}
 	}
 
-	if err := h.events.Store(r.Context(), ev); err != nil {
-		middleware.Logger(r).Error("sendgrid webhook: store event", "sg_event_id", sgEventID, "err", err)
+	if err := h.events.Store(c.Request.Context(), ev); err != nil {
+		middleware.Logger(c).Error("sendgrid webhook: store event", "sg_event_id", sgEventID, "err", err)
 	}
 }

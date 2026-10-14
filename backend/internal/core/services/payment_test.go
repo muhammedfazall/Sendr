@@ -176,4 +176,3 @@ func TestPaymentServiceVerifyPaymentSuccess(t *testing.T) {
 		t.Fatalf("expected user plan 'pro', got %q", plan.Name)
 	}
 }
-

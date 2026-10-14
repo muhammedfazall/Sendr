@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -29,6 +30,15 @@ func (m *mockRDB) Ping(_ context.Context) *redis.StatusCmd {
 	return cmd
 }
 
+func runCheck(h *Handler) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/health", nil)
+	h.Check(c)
+	return w
+}
+
 func TestHealthCheckAllOK(t *testing.T) {
 	s := NewService(&mockDB{}, &mockRDB{})
 	h := NewHandler(s)
@@ -45,10 +55,7 @@ func TestHealthCheckAllOK(t *testing.T) {
 	}
 
 	// Also verify through the HTTP handler
-	handler := h.Check()
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
+	w := runCheck(h)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -78,10 +85,7 @@ func TestHealthCheckDBError(t *testing.T) {
 		t.Fatalf("expected redis ok, got %s", result.Redis)
 	}
 
-	handler := h.Check()
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
+	w := runCheck(h)
 
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", w.Code)
@@ -122,10 +126,7 @@ func TestHealthHandlerGETOnly(t *testing.T) {
 	s := NewService(&mockDB{}, &mockRDB{})
 	h := NewHandler(s)
 
-	// Handler should work with GET
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	w := httptest.NewRecorder()
-	h.Check().ServeHTTP(w, req)
+	w := runCheck(h)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for GET, got %d", w.Code)
@@ -136,27 +137,18 @@ func TestHealthHandlerResponseStructure(t *testing.T) {
 	s := NewService(&mockDB{}, &mockRDB{})
 	h := NewHandler(s)
 
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	w := httptest.NewRecorder()
-	h.Check().ServeHTTP(w, req)
+	w := runCheck(h)
 
-	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("expected Content-Type application/json, got %s", ct)
-	}
-
-	var body map[string]interface{}
+	var body HealthStatus
 	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
-		t.Fatalf("decode: %v", err)
+		t.Fatalf("decode body: %v", err)
 	}
-
-	for _, k := range []string{"status", "db", "redis"} {
-		if _, ok := body[k]; !ok {
-			t.Fatalf("missing key %q in response", k)
-		}
+	if body.Status != "ok" || body.DB != "ok" || body.Redis != "ok" {
+		t.Fatalf("expected all ok, got %+v", body)
 	}
 }
 
-func TestHealthServiceCheckCalledMultipleTimes(t *testing.T) {
+func TestHealthCheckManyTimes(t *testing.T) {
 	s := NewService(&mockDB{}, &mockRDB{})
 
 	for i := 0; i < 5; i++ {

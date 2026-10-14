@@ -69,14 +69,14 @@ type Attachment struct {
 
 // EmailPayload is the data needed to send a single email.
 type EmailPayload struct {
-	From        *EmailAddress    `json:"from,omitempty"`
-	To          []string         `json:"to"`
-	CC          []string         `json:"cc,omitempty"`
-	BCC         []string         `json:"bcc,omitempty"`
-	Subject     string           `json:"subject"`
-	TextBody    string           `json:"text_body,omitempty"`
-	HTMLBody    string           `json:"html_body,omitempty"`
-	Attachments []Attachment     `json:"attachments,omitempty"`
+	From        *EmailAddress     `json:"from,omitempty"`
+	To          []string          `json:"to"`
+	CC          []string          `json:"cc,omitempty"`
+	BCC         []string          `json:"bcc,omitempty"`
+	Subject     string            `json:"subject"`
+	TextBody    string            `json:"text_body,omitempty"`
+	HTMLBody    string            `json:"html_body,omitempty"`
+	Attachments []Attachment      `json:"attachments,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"`
 	Tags        map[string]string `json:"tags,omitempty"`
 }
@@ -85,16 +85,16 @@ type EmailPayload struct {
 // "to" field and "body"/"html" fields used by previously queued jobs.
 func (p *EmailPayload) UnmarshalJSON(data []byte) error {
 	type alias struct {
-		From        *EmailAddress    `json:"from,omitempty"`
-		To          any              `json:"to"`
-		CC          []string         `json:"cc,omitempty"`
-		BCC         []string         `json:"bcc,omitempty"`
-		Subject     string           `json:"subject"`
-		TextBody    string           `json:"text_body,omitempty"`
-		HTMLBody    string           `json:"html_body,omitempty"`
-		Body        string           `json:"body,omitempty"`
-		HTML        bool             `json:"html,omitempty"`
-		Attachments []Attachment     `json:"attachments,omitempty"`
+		From        *EmailAddress     `json:"from,omitempty"`
+		To          any               `json:"to"`
+		CC          []string          `json:"cc,omitempty"`
+		BCC         []string          `json:"bcc,omitempty"`
+		Subject     string            `json:"subject"`
+		TextBody    string            `json:"text_body,omitempty"`
+		HTMLBody    string            `json:"html_body,omitempty"`
+		Body        string            `json:"body,omitempty"`
+		HTML        bool              `json:"html,omitempty"`
+		Attachments []Attachment      `json:"attachments,omitempty"`
 		Headers     map[string]string `json:"headers,omitempty"`
 		Tags        map[string]string `json:"tags,omitempty"`
 	}
@@ -140,14 +140,14 @@ func (p *EmailPayload) UnmarshalJSON(data []byte) error {
 
 // Template is a user-defined email template rendered with Go html/template.
 type Template struct {
-	ID               string    `json:"id"`
-	UserID           string    `json:"user_id"`
-	Name             string    `json:"name"`
-	SubjectTemplate  string    `json:"subject_template"`
-	HTMLTemplate     string    `json:"html_template"`
-	TextTemplate     string    `json:"text_template"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	UserID          string    `json:"user_id"`
+	Name            string    `json:"name"`
+	SubjectTemplate string    `json:"subject_template"`
+	HTMLTemplate    string    `json:"html_template"`
+	TextTemplate    string    `json:"text_template"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // EmailEvent represents a delivery event from SendGrid (open, click, bounce, etc.).
@@ -172,15 +172,15 @@ type Unsubscription struct {
 
 // Payment tracks a Razorpay payment for a plan upgrade.
 type Payment struct {
-	ID                 string    `json:"id"`
-	UserID             string    `json:"user_id"`
-	RazorpayOrderID    string    `json:"razorpay_order_id"`
-	RazorpayPaymentID  *string    `json:"razorpay_payment_id,omitempty"`
-	RazorpaySignature  *string    `json:"-"`
-	PlanName           string    `json:"plan_name"`
-	AmountPaise        int       `json:"amount_paise"`
-	Currency           string    `json:"currency"`
-	Status             string    `json:"status"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	ID                string    `json:"id"`
+	UserID            string    `json:"user_id"`
+	RazorpayOrderID   string    `json:"razorpay_order_id"`
+	RazorpayPaymentID *string   `json:"razorpay_payment_id,omitempty"`
+	RazorpaySignature *string   `json:"-"`
+	PlanName          string    `json:"plan_name"`
+	AmountPaise       int       `json:"amount_paise"`
+	Currency          string    `json:"currency"`
+	Status            string    `json:"status"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }

@@ -12,9 +12,18 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 	"github.com/muhammedfazall/Sendr/pkg/config"
 )
+
+func runGinInto(w *httptest.ResponseRecorder, req *http.Request, h gin.HandlerFunc) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	h(c)
+	c.Writer.WriteHeaderNow()
+}
 
 type mockPaymentRepo struct {
 	findByOrderIDFn func(ctx context.Context, orderID string) (*domain.Payment, error)
@@ -95,7 +104,7 @@ func TestWebhookPaymentCapturedSuccess(t *testing.T) {
 	req.Header.Set("X-Razorpay-Signature", sig)
 	w := httptest.NewRecorder()
 
-	h.Handle().ServeHTTP(w, req)
+	runGinInto(w, req, h.Handle)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -112,7 +121,7 @@ func TestWebhookInvalidSignature(t *testing.T) {
 	req.Header.Set("X-Razorpay-Signature", "invalid_sig")
 	w := httptest.NewRecorder()
 
-	h.Handle().ServeHTTP(w, req)
+	runGinInto(w, req, h.Handle)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -128,7 +137,7 @@ func TestWebhookMissingSignature(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/razorpay", strings.NewReader(string(body)))
 	w := httptest.NewRecorder()
 
-	h.Handle().ServeHTTP(w, req)
+	runGinInto(w, req, h.Handle)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -146,7 +155,7 @@ func TestWebhookInvalidBody(t *testing.T) {
 	req.Header.Set("X-Razorpay-Signature", sig)
 	w := httptest.NewRecorder()
 
-	h.Handle().ServeHTTP(w, req)
+	runGinInto(w, req, h.Handle)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
@@ -164,7 +173,7 @@ func TestWebhookWrongEventIgnored(t *testing.T) {
 	req.Header.Set("X-Razorpay-Signature", sig)
 	w := httptest.NewRecorder()
 
-	h.Handle().ServeHTTP(w, req)
+	runGinInto(w, req, h.Handle)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -187,7 +196,7 @@ func TestWebhookPaymentNotFound(t *testing.T) {
 	req.Header.Set("X-Razorpay-Signature", sig)
 	w := httptest.NewRecorder()
 
-	h.Handle().ServeHTTP(w, req)
+	runGinInto(w, req, h.Handle)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -212,7 +221,7 @@ func TestWebhookAlreadyPaid(t *testing.T) {
 	req.Header.Set("X-Razorpay-Signature", sig)
 	w := httptest.NewRecorder()
 
-	h.Handle().ServeHTTP(w, req)
+	runGinInto(w, req, h.Handle)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -240,7 +249,7 @@ func TestWebhookMarkPaidError(t *testing.T) {
 	req.Header.Set("X-Razorpay-Signature", sig)
 	w := httptest.NewRecorder()
 
-	h.Handle().ServeHTTP(w, req)
+	runGinInto(w, req, h.Handle)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)
@@ -271,7 +280,7 @@ func TestWebhookUpdatePlanError(t *testing.T) {
 	req.Header.Set("X-Razorpay-Signature", sig)
 	w := httptest.NewRecorder()
 
-	h.Handle().ServeHTTP(w, req)
+	runGinInto(w, req, h.Handle)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)
@@ -285,7 +294,7 @@ func TestWebhookReadBodyError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/webhooks/razorpay", nil)
 	w := httptest.NewRecorder()
 
-	h.Handle().ServeHTTP(w, req)
+	runGinInto(w, req, h.Handle)
 
 	// With nil body, io.ReadAll returns empty body, HMAC doesn't match empty string
 	// since no signature provided, so it's 401

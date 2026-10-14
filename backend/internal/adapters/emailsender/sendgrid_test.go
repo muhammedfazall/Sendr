@@ -134,5 +134,4 @@ func TestMockSenderCleanState(t *testing.T) {
 	}
 }
 
-
 var _ Sender = (*MockSender)(nil)

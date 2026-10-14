@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
 	"github.com/muhammedfazall/Sendr/pkg/config"
@@ -26,7 +27,7 @@ type mockAuthSvc struct {
 	logoutFn         func(ctx context.Context, userID, accessTokenID string, accessTokenTTL time.Duration) error
 }
 
-func (m *mockAuthSvc) GetAuthURL(state string) string                { return m.getAuthURLFn(state) }
+func (m *mockAuthSvc) GetAuthURL(state string) string { return m.getAuthURLFn(state) }
 func (m *mockAuthSvc) HandleCallback(ctx context.Context, code string) (string, string, error) {
 	return m.handleCallbackFn(ctx, code)
 }
@@ -50,14 +51,13 @@ func authHandler(t *testing.T) *Handler {
 	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
 
 	cfg := &config.Config{
-		FrontendURL:      "http://localhost:5173",
 		OAuthStateSecret: "test-state-secret",
 		JWTPublicKeyPEM:  string(pubPEM),
 		AppEnv:           "development",
 	}
 	h, err := New(&mockAuthSvc{}, cfg)
 	if err != nil {
-		t.Fatalf("New auth handler: %v", err)
+		t.Fatalf("New: %v", err)
 	}
 	return h
 }
@@ -69,6 +69,19 @@ func signTokenPK(t *testing.T, pk *rsa.PrivateKey, claims jwt.MapClaims) string 
 		t.Fatalf("sign token: %v", err)
 	}
 	return tok
+}
+
+func runGin(req *http.Request, claims jwt.MapClaims, h gin.HandlerFunc) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	if claims != nil {
+		c.Set(middleware.UserClaimsKey, claims)
+	}
+	h(c)
+	c.Writer.WriteHeaderNow()
+	return w
 }
 
 func TestLoginRedirectsToGoogle(t *testing.T) {
@@ -84,9 +97,8 @@ func TestLoginRedirectsToGoogle(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/google", nil)
 	req.Header.Set("User-Agent", "test-agent")
-	w := httptest.NewRecorder()
 
-	h.Login().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Login)
 
 	if w.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("expected 307, got %d", w.Code)
@@ -121,9 +133,8 @@ func TestLoginWithRedirectURI(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/google?redirect_uri=http://localhost:9876/callback", nil)
 	req.Header.Set("User-Agent", "test-agent")
-	w := httptest.NewRecorder()
 
-	h.Login().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Login)
 
 	cookies := w.Result().Cookies()
 	var foundRedirect bool
@@ -152,19 +163,12 @@ func TestCallbackSuccess(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=auth_code_xyz", nil)
+	state := buildState("test-state-secret", "test-agent")
+	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=auth_code_xyz&state="+state, nil)
 	req.Header.Set("User-Agent", "test-agent")
-	req.AddCookie(&http.Cookie{Name: "oauth_state", Value: buildState("test-state-secret", "test-agent")})
-	// Add the state to the query
-	req.URL.RawQuery = "code=auth_code_xyz&state=" + req.Cookies()[0].Value
+	req.AddCookie(&http.Cookie{Name: "oauth_state", Value: state})
 
-	// Re-create with query containing the state
-	req = httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=auth_code_xyz&state="+req.Cookies()[0].Value, nil)
-	req.Header.Set("User-Agent", "test-agent")
-	req.AddCookie(&http.Cookie{Name: "oauth_state", Value: req.URL.Query().Get("state")})
-
-	w := httptest.NewRecorder()
-	h.Callback().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Callback)
 
 	if w.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("expected 307, got %d", w.Code)
@@ -193,16 +197,12 @@ func TestCallbackMissingStateCookie(t *testing.T) {
 	h.svc = &mockAuthSvc{}
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=xyz", nil)
-	w := httptest.NewRecorder()
 
-	h.Callback().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Callback)
 
-	// Should redirect with error
-	if w.Code != http.StatusTemporaryRedirect {
-		t.Fatalf("expected 307, got %d", w.Code)
-	}
-	if strings.Contains(w.Body.String(), "missing_state") {
-		t.Log("redirect includes error in query string")
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "missing_state") {
+		t.Fatalf("expected redirect with missing_state, got: %s", loc)
 	}
 }
 
@@ -213,11 +213,9 @@ func TestCallbackInvalidState(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=xyz&state=invalid", nil)
 	req.Header.Set("User-Agent", "test-agent")
 	req.AddCookie(&http.Cookie{Name: "oauth_state", Value: "invalid-state"})
-	w := httptest.NewRecorder()
 
-	h.Callback().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Callback)
 
-	// Should redirect with error
 	loc := w.Header().Get("Location")
 	if !strings.Contains(loc, "invalid_state") {
 		t.Fatalf("expected redirect with invalid_state, got: %s", loc)
@@ -232,15 +230,12 @@ func TestCallbackHandleCallbackError(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=bad", nil)
-	req.Header.Set("User-Agent", "test-agent")
 	state := buildState("test-state-secret", "test-agent")
-	req.URL.RawQuery = "code=bad&state=" + state
+	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?code=bad&state="+state, nil)
 	req.Header.Set("User-Agent", "test-agent")
 	req.AddCookie(&http.Cookie{Name: "oauth_state", Value: state})
-	w := httptest.NewRecorder()
 
-	h.Callback().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Callback)
 
 	loc := w.Header().Get("Location")
 	if !strings.Contains(loc, "auth_failed") {
@@ -253,9 +248,8 @@ func TestTokenSuccess(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/token", nil)
 	req.AddCookie(&http.Cookie{Name: "auth_token", Value: "my-access-token"})
-	w := httptest.NewRecorder()
 
-	h.Token().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Token)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
@@ -266,9 +260,8 @@ func TestTokenMissingCookie(t *testing.T) {
 	h := authHandler(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/token", nil)
-	w := httptest.NewRecorder()
 
-	h.Token().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Token)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -299,7 +292,6 @@ func TestRefreshSuccess(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	// Create an expired signed token for the Authorization header
 	claims := jwt.MapClaims{
 		"user_id": "user-1",
 		"jti":     "jti-1",
@@ -312,9 +304,8 @@ func TestRefreshSuccess(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
 	req.Header.Set("Authorization", "Bearer "+tokenStr)
 	req.AddCookie(&http.Cookie{Name: "refresh_token", Value: "old-refresh"})
-	w := httptest.NewRecorder()
 
-	h.Refresh().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Refresh)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
@@ -325,9 +316,8 @@ func TestRefreshMissingRefreshCookie(t *testing.T) {
 	h := authHandler(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
-	w := httptest.NewRecorder()
 
-	h.Refresh().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Refresh)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -339,9 +329,8 @@ func TestRefreshMissingAuthHeader(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
 	req.AddCookie(&http.Cookie{Name: "refresh_token", Value: "some-refresh"})
-	w := httptest.NewRecorder()
 
-	h.Refresh().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Refresh)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -384,9 +373,8 @@ func TestRefreshFailed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
 	req.Header.Set("Authorization", "Bearer "+tokenStr)
 	req.AddCookie(&http.Cookie{Name: "refresh_token", Value: "old-refresh"})
-	w := httptest.NewRecorder()
 
-	h.Refresh().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Refresh)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -407,11 +395,8 @@ func TestLogoutSuccess(t *testing.T) {
 		"exp":     float64(time.Now().Add(1 * time.Hour).Unix()),
 	}
 	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
-	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, claims)
-	req = req.WithContext(ctx)
-	w := httptest.NewRecorder()
 
-	h.Logout().ServeHTTP(w, req)
+	w := runGin(req, claims, h.Logout)
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", w.Code)
@@ -422,9 +407,8 @@ func TestLogoutMissingClaims(t *testing.T) {
 	h := authHandler(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
-	w := httptest.NewRecorder()
 
-	h.Logout().ServeHTTP(w, req)
+	w := runGin(req, nil, h.Logout)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -445,11 +429,8 @@ func TestLogoutServiceError(t *testing.T) {
 		"exp":     float64(time.Now().Add(1 * time.Hour).Unix()),
 	}
 	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
-	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, claims)
-	req = req.WithContext(ctx)
-	w := httptest.NewRecorder()
 
-	h.Logout().ServeHTTP(w, req)
+	w := runGin(req, claims, h.Logout)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
@@ -47,10 +48,19 @@ func (m *mockLimiter) Check(ctx context.Context, userID string, limit int) (bool
 	return m.checkFn(ctx, userID, limit)
 }
 
-func meWithClaims(r *http.Request, userID string) *http.Request {
-	claims := jwt.MapClaims{"user_id": userID}
-	ctx := context.WithValue(r.Context(), middleware.UserClaimsKey, claims)
-	return r.WithContext(ctx)
+func runHandler(method, target, body string, claims jwt.MapClaims, h gin.HandlerFunc) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	if claims != nil {
+		c.Set(middleware.UserClaimsKey, claims)
+	}
+	h(c)
+	c.Writer.WriteHeaderNow()
+	return w
 }
 
 func TestGetMeSuccess(t *testing.T) {
@@ -66,11 +76,7 @@ func TestGetMeSuccess(t *testing.T) {
 	}
 	h := New(users, limiter)
 
-	req := httptest.NewRequest(http.MethodGet, "/me", nil)
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Get().ServeHTTP(w, req)
+	w := runHandler(http.MethodGet, "/me", "", jwt.MapClaims{"user_id": "user-1"}, h.Get)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
@@ -80,10 +86,7 @@ func TestGetMeSuccess(t *testing.T) {
 func TestGetMeMissingClaims(t *testing.T) {
 	h := New(&mockUserRepo{}, &mockLimiter{})
 
-	req := httptest.NewRequest(http.MethodGet, "/me", nil)
-	w := httptest.NewRecorder()
-
-	h.Get().ServeHTTP(w, req)
+	w := runHandler(http.MethodGet, "/me", "", nil, h.Get)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -98,11 +101,7 @@ func TestGetMeFindWithPlanError(t *testing.T) {
 	}
 	h := New(users, &mockLimiter{})
 
-	req := httptest.NewRequest(http.MethodGet, "/me", nil)
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Get().ServeHTTP(w, req)
+	w := runHandler(http.MethodGet, "/me", "", jwt.MapClaims{"user_id": "user-1"}, h.Get)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)
@@ -122,11 +121,7 @@ func TestGetMeUsageSnapshotWithLimit(t *testing.T) {
 	}
 	h := New(users, limiter)
 
-	req := httptest.NewRequest(http.MethodGet, "/me", nil)
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Get().ServeHTTP(w, req)
+	w := runHandler(http.MethodGet, "/me", "", jwt.MapClaims{"user_id": "user-1"}, h.Get)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -146,11 +141,7 @@ func TestGetMeUsageSnapshotExhausted(t *testing.T) {
 	}
 	h := New(users, limiter)
 
-	req := httptest.NewRequest(http.MethodGet, "/me", nil)
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Get().ServeHTTP(w, req)
+	w := runHandler(http.MethodGet, "/me", "", jwt.MapClaims{"user_id": "user-1"}, h.Get)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -170,11 +161,7 @@ func TestGetMeUsageSnapshotUnlimited(t *testing.T) {
 	}
 	h := New(users, limiter)
 
-	req := httptest.NewRequest(http.MethodGet, "/me", nil)
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Get().ServeHTTP(w, req)
+	w := runHandler(http.MethodGet, "/me", "", jwt.MapClaims{"user_id": "user-1"}, h.Get)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -194,11 +181,7 @@ func TestGetMeUsageSnapshotGetCountError(t *testing.T) {
 	}
 	h := New(users, limiter)
 
-	req := httptest.NewRequest(http.MethodGet, "/me", nil)
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Get().ServeHTTP(w, req)
+	w := runHandler(http.MethodGet, "/me", "", jwt.MapClaims{"user_id": "user-1"}, h.Get)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -218,12 +201,7 @@ func TestUpdateMeSuccess(t *testing.T) {
 	}
 	h := New(users, &mockLimiter{getCountFn: func(_ context.Context, _ string) (int, error) { return 0, nil }})
 
-	req := httptest.NewRequest(http.MethodPatch, "/me", strings.NewReader(`{"name":"Bob"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Update().ServeHTTP(w, req)
+	w := runHandler(http.MethodPatch, "/me", `{"name":"Bob"}`, jwt.MapClaims{"user_id": "user-1"}, h.Update)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
@@ -233,11 +211,7 @@ func TestUpdateMeSuccess(t *testing.T) {
 func TestUpdateMeMissingClaims(t *testing.T) {
 	h := New(&mockUserRepo{}, &mockLimiter{})
 
-	req := httptest.NewRequest(http.MethodPatch, "/me", strings.NewReader(`{"name":"Bob"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	h.Update().ServeHTTP(w, req)
+	w := runHandler(http.MethodPatch, "/me", `{"name":"Bob"}`, nil, h.Update)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -247,12 +221,7 @@ func TestUpdateMeMissingClaims(t *testing.T) {
 func TestUpdateMeInvalidBody(t *testing.T) {
 	h := New(&mockUserRepo{}, &mockLimiter{})
 
-	req := httptest.NewRequest(http.MethodPatch, "/me", strings.NewReader(`not json`))
-	req.Header.Set("Content-Type", "application/json")
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Update().ServeHTTP(w, req)
+	w := runHandler(http.MethodPatch, "/me", `not json`, jwt.MapClaims{"user_id": "user-1"}, h.Update)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
@@ -262,12 +231,7 @@ func TestUpdateMeInvalidBody(t *testing.T) {
 func TestUpdateMeNameTooShort(t *testing.T) {
 	h := New(&mockUserRepo{}, &mockLimiter{})
 
-	req := httptest.NewRequest(http.MethodPatch, "/me", strings.NewReader(`{"name":"A"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Update().ServeHTTP(w, req)
+	w := runHandler(http.MethodPatch, "/me", `{"name":"A"}`, jwt.MapClaims{"user_id": "user-1"}, h.Update)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
@@ -278,12 +242,7 @@ func TestUpdateMeNameTooLong(t *testing.T) {
 	h := New(&mockUserRepo{}, &mockLimiter{})
 
 	longName := strings.Repeat("A", 81)
-	req := httptest.NewRequest(http.MethodPatch, "/me", strings.NewReader(`{"name":"`+longName+`"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Update().ServeHTTP(w, req)
+	w := runHandler(http.MethodPatch, "/me", `{"name":"`+longName+`"}`, jwt.MapClaims{"user_id": "user-1"}, h.Update)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
@@ -298,12 +257,7 @@ func TestUpdateMeUpdateProfileError(t *testing.T) {
 	}
 	h := New(users, &mockLimiter{})
 
-	req := httptest.NewRequest(http.MethodPatch, "/me", strings.NewReader(`{"name":"Bob"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Update().ServeHTTP(w, req)
+	w := runHandler(http.MethodPatch, "/me", `{"name":"Bob"}`, jwt.MapClaims{"user_id": "user-1"}, h.Update)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)
@@ -321,12 +275,7 @@ func TestUpdateMeFindWithPlanAfterUpdateError(t *testing.T) {
 	}
 	h := New(users, &mockLimiter{})
 
-	req := httptest.NewRequest(http.MethodPatch, "/me", strings.NewReader(`{"name":"Bob"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req = meWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Update().ServeHTTP(w, req)
+	w := runHandler(http.MethodPatch, "/me", `{"name":"Bob"}`, jwt.MapClaims{"user_id": "user-1"}, h.Update)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)

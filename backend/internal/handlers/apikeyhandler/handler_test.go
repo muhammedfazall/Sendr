@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/muhammedfazall/Sendr/internal/core/domain"
 	"github.com/muhammedfazall/Sendr/internal/middleware"
@@ -34,18 +34,20 @@ func (m *mockAPIKeySvc) Validate(ctx context.Context, fullKey string) (*domain.A
 	return nil, nil
 }
 
-func apikeyWithClaims(r *http.Request, userID string) *http.Request {
-	claims := jwt.MapClaims{"user_id": userID}
-	ctx := context.WithValue(r.Context(), middleware.UserClaimsKey, claims)
-	return r.WithContext(ctx)
-}
-
-func chiCtx(r *http.Request, params map[string]string) *http.Request {
-	chiC := chi.NewRouteContext()
-	for k, v := range params {
-		chiC.URLParams.Add(k, v)
+func runHandler(method, target, body string, claims jwt.MapClaims, params gin.Params, h gin.HandlerFunc) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Params = params
+	if claims != nil {
+		c.Set(middleware.UserClaimsKey, claims)
 	}
-	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, chiC))
+	h(c)
+	c.Writer.WriteHeaderNow()
+	return w
 }
 
 func TestCreateAPIKeySuccess(t *testing.T) {
@@ -58,12 +60,7 @@ func TestCreateAPIKeySuccess(t *testing.T) {
 	}
 	h := New(mock)
 
-	req := httptest.NewRequest(http.MethodPost, "/apikeys", strings.NewReader(`{"name":"test-key"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req = apikeyWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Create().ServeHTTP(w, req)
+	w := runHandler(http.MethodPost, "/apikeys", `{"name":"test-key"}`, jwt.MapClaims{"user_id": "user-1"}, nil, h.Create)
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
@@ -73,11 +70,7 @@ func TestCreateAPIKeySuccess(t *testing.T) {
 func TestCreateAPIKeyMissingClaims(t *testing.T) {
 	h := New(&mockAPIKeySvc{})
 
-	req := httptest.NewRequest(http.MethodPost, "/apikeys", strings.NewReader(`{"name":"test"}`))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	h.Create().ServeHTTP(w, req)
+	w := runHandler(http.MethodPost, "/apikeys", `{"name":"test"}`, nil, nil, h.Create)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -87,12 +80,7 @@ func TestCreateAPIKeyMissingClaims(t *testing.T) {
 func TestCreateAPIKeyInvalidBody(t *testing.T) {
 	h := New(&mockAPIKeySvc{})
 
-	req := httptest.NewRequest(http.MethodPost, "/apikeys", strings.NewReader(`not json`))
-	req.Header.Set("Content-Type", "application/json")
-	req = apikeyWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Create().ServeHTTP(w, req)
+	w := runHandler(http.MethodPost, "/apikeys", `not json`, jwt.MapClaims{"user_id": "user-1"}, nil, h.Create)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
@@ -102,12 +90,7 @@ func TestCreateAPIKeyInvalidBody(t *testing.T) {
 func TestCreateAPIKeyEmptyName(t *testing.T) {
 	h := New(&mockAPIKeySvc{})
 
-	req := httptest.NewRequest(http.MethodPost, "/apikeys", strings.NewReader(`{"name":""}`))
-	req.Header.Set("Content-Type", "application/json")
-	req = apikeyWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Create().ServeHTTP(w, req)
+	w := runHandler(http.MethodPost, "/apikeys", `{"name":""}`, jwt.MapClaims{"user_id": "user-1"}, nil, h.Create)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
@@ -122,12 +105,7 @@ func TestCreateAPIKeyServiceError(t *testing.T) {
 	}
 	h := New(mock)
 
-	req := httptest.NewRequest(http.MethodPost, "/apikeys", strings.NewReader(`{"name":"key"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req = apikeyWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.Create().ServeHTTP(w, req)
+	w := runHandler(http.MethodPost, "/apikeys", `{"name":"key"}`, jwt.MapClaims{"user_id": "user-1"}, nil, h.Create)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)
@@ -137,16 +115,12 @@ func TestCreateAPIKeyServiceError(t *testing.T) {
 func TestListAPIKeysSuccess(t *testing.T) {
 	mock := &mockAPIKeySvc{
 		listFn: func(_ context.Context, _ string) ([]domain.APIKey, error) {
-			return []domain.APIKey{{ID: "key-1", Name: "test", Prefix: "sendr_t", CreatedAt: time.Now()}}, nil
+			return []domain.APIKey{{ID: "key-1", Name: "test", Prefix: "sendr_test", CreatedAt: time.Now()}}, nil
 		},
 	}
 	h := New(mock)
 
-	req := httptest.NewRequest(http.MethodGet, "/apikeys", nil)
-	req = apikeyWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.List().ServeHTTP(w, req)
+	w := runHandler(http.MethodGet, "/apikeys", "", jwt.MapClaims{"user_id": "user-1"}, nil, h.List)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -156,10 +130,7 @@ func TestListAPIKeysSuccess(t *testing.T) {
 func TestListAPIKeysMissingClaims(t *testing.T) {
 	h := New(&mockAPIKeySvc{})
 
-	req := httptest.NewRequest(http.MethodGet, "/apikeys", nil)
-	w := httptest.NewRecorder()
-
-	h.List().ServeHTTP(w, req)
+	w := runHandler(http.MethodGet, "/apikeys", "", nil, nil, h.List)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -174,11 +145,7 @@ func TestListAPIKeysServiceError(t *testing.T) {
 	}
 	h := New(mock)
 
-	req := httptest.NewRequest(http.MethodGet, "/apikeys", nil)
-	req = apikeyWithClaims(req, "user-1")
-	w := httptest.NewRecorder()
-
-	h.List().ServeHTTP(w, req)
+	w := runHandler(http.MethodGet, "/apikeys", "", jwt.MapClaims{"user_id": "user-1"}, nil, h.List)
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", w.Code)
@@ -191,12 +158,7 @@ func TestRevokeAPIKeySuccess(t *testing.T) {
 	}
 	h := New(mock)
 
-	req := httptest.NewRequest(http.MethodDelete, "/apikeys/key-1", nil)
-	req = apikeyWithClaims(req, "user-1")
-	req = chiCtx(req, map[string]string{"id": "key-1"})
-	w := httptest.NewRecorder()
-
-	h.Revoke().ServeHTTP(w, req)
+	w := runHandler(http.MethodDelete, "/apikeys/key-1", "", jwt.MapClaims{"user_id": "user-1"}, gin.Params{{Key: "id", Value: "key-1"}}, h.Revoke)
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", w.Code)
@@ -206,10 +168,7 @@ func TestRevokeAPIKeySuccess(t *testing.T) {
 func TestRevokeAPIKeyMissingClaims(t *testing.T) {
 	h := New(&mockAPIKeySvc{})
 
-	req := httptest.NewRequest(http.MethodDelete, "/apikeys/key-1", nil)
-	w := httptest.NewRecorder()
-
-	h.Revoke().ServeHTTP(w, req)
+	w := runHandler(http.MethodDelete, "/apikeys/key-1", "", nil, gin.Params{{Key: "id", Value: "key-1"}}, h.Revoke)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", w.Code)
@@ -222,12 +181,7 @@ func TestRevokeAPIKeyNotFound(t *testing.T) {
 	}
 	h := New(mock)
 
-	req := httptest.NewRequest(http.MethodDelete, "/apikeys/key-1", nil)
-	req = apikeyWithClaims(req, "user-1")
-	req = chiCtx(req, map[string]string{"id": "key-1"})
-	w := httptest.NewRecorder()
-
-	h.Revoke().ServeHTTP(w, req)
+	w := runHandler(http.MethodDelete, "/apikeys/key-1", "", jwt.MapClaims{"user_id": "user-1"}, gin.Params{{Key: "id", Value: "key-1"}}, h.Revoke)
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", w.Code)

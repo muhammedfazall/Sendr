@@ -58,12 +58,12 @@ type PaymentRepository interface {
 
 // EmailEventStats holds aggregate counts for a user's email events.
 type EmailEventStats struct {
-	Sent     int `json:"sent"`
+	Sent      int `json:"sent"`
 	Delivered int `json:"delivered"`
-	Opens    int `json:"opens"`
-	Clicks   int `json:"clicks"`
-	Bounces  int `json:"bounces"`
-	Spam     int `json:"spam"`
+	Opens     int `json:"opens"`
+	Clicks    int `json:"clicks"`
+	Bounces   int `json:"bounces"`
+	Spam      int `json:"spam"`
 }
 
 // EmailEventRepository defines persistence for delivery events.
