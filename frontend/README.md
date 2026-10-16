@@ -1,16 +1,83 @@
-# React + Vite
+# Sendr Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React single-page dashboard for [Sendr](../README.md), the transactional email API.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Concern | Technology |
+|---------|------------|
+| Framework | React 19 |
+| Build tool | Vite 8 |
+| Routing | React Router 7 |
+| Styling | Tailwind CSS v4 (`@tailwindcss/vite`) |
+| Linting | ESLint 10 (`eslint-plugin-react-hooks`, `react-refresh`) |
+| Hosting | Vercel (SPA rewrites via `vercel.json`) |
 
-## React Compiler
+## Getting Started
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+**Prerequisites:** Node 20+
 
-## Expanding the ESLint configuration
+```bash
+npm install
+npm run dev      # start the Vite dev server (http://localhost:5173)
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+The backend must be running at `http://localhost:8080` (default). Point the app elsewhere with `VITE_API_URL`:
+
+```bash
+# .env.local
+VITE_API_URL=http://localhost:8080
+```
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start the Vite dev server |
+| `npm run build` | Production build to `dist/` |
+| `npm run preview` | Preview the production build locally |
+| `npm run lint` | Run ESLint |
+
+## Routes
+
+| Route | Component | Auth | Description |
+|-------|-----------|------|-------------|
+| `/` | `Landing` | Public | Product landing page |
+| `/login` | `Login` | Public | Google OAuth sign-in |
+| `/callback` | `Callback` | Public | OAuth callback handler |
+| `/dashboard` | `Dashboard` | Protected | Stats overview |
+| `/keys` | `APIKeys` | Protected | API key management |
+| `/send` | `SendEmail` | Protected | Email composer |
+| `/history` | `MailHistory` | Protected | Email history |
+| `/pricing` | `Pricing` | Protected | Plan comparison + Razorpay upgrade |
+| `/profile` | `Profile` | Protected | User profile |
+
+## Project Layout
+
+```
+src/
+├── pages/           # Route components
+├── components/      # Layout + shared UI
+├── lib/
+│   ├── api.js           # Fetch wrapper around the backend API
+│   ├── auth.jsx         # AuthProvider (token storage, refresh, logout)
+│   ├── auth-context.js  # React context + useAuth hook
+│   └── config.js        # API base URL resolution + host allowlist
+├── index.css        # Design tokens + Tailwind entry
+├── landing.css      # Landing-page-specific styles
+├── App.jsx          # Router + route definitions
+└── main.jsx         # React entry point
+```
+
+## API Base URL
+
+`src/lib/config.js` resolves the backend URL and rejects any host not on the allowlist:
+
+- Production default: `https://sendr-api.onrender.com`
+- Development default: `http://localhost:8080`
+- Override: `VITE_API_URL`
+- Allowed hosts: `localhost:8080`, `127.0.0.1:8080`, `sendr.app`, `sendr-api.onrender.com`
+
+## Deployment
+
+Build with `npm run build` and deploy the `dist/` output. `vercel.json` configures SPA rewrites so client-side routes resolve to `index.html`.

@@ -65,7 +65,7 @@ Both names share the same email, so this is one person. **No teammate commits or
 - **Backend services:** 1 Go service (monolith, clean architecture) + 1 React SPA. Internally: **5 core service types** (auth, apikey, email, payment, template) and **12 adapter packages**.
 - **API endpoints:** **27 route registrations** in `internal/router/router.go` (4 public, 5 auth, 14 JWT-protected, 2 API-key-protected, 2 unsubscribe).
 - **Database tables:** **9** (`plans`, `users`, `api_keys`, `jobs`, `dlq`, `payments`, `email_events`, `unsubscriptions`, `templates`).
-- **Migrations:** **10 pairs** (10 up + 10 down). *(README says "6 migration pairs" — outdated.)*
+- **Migrations:** **10 pairs** (10 up + 10 down).
 - **Background workers:** **1 job worker loop** (10 concurrent job goroutines) + **1 in-process event-bus dispatcher**; zombie/reclaim sweep runs on a 60s tick.
 - **Email providers:** **4** pluggable backends (SendGrid, Mailgun, SMTP, Mock).
 - **Tests:** **188 test functions** across **18 test files**, ~**3,658 lines** of Go test code.
@@ -147,7 +147,7 @@ Also useful: `go test ./... -cover` for a coverage baseline.
 ## 8. Deployment
 
 - **Cloud provider:** Backend on **Render** (live URL `https://sendr-api.onrender.com`, hard-coded in `frontend/src/lib/config.js`). Database on **Neon** (CI applies migrations via `secrets.NEON_DB_URL`). Frontend built with Vite, configured for **Vercel** SPA rewrites (`frontend/vercel.json`); `sendr.app` is whitelisted in the frontend host allowlist.
-- **History:** Earlier commits show an EC2/SSH deploy, later replaced by Render (`0b04877 Host changed from EC2 to render`). **README still says "deploys to EC2 via SSH" — outdated.**
+- **History:** Earlier commits show an EC2/SSH deploy, later replaced by Render (`0b04877 Host changed from EC2 to render`). The README has been updated to reflect the Render deployment.
 - **CI/CD (`.github/workflows/deploy.yml`, on push to `main`):**
   1. **build-and-test** — checkout → set up Go 1.26 → `go test -v ./...`.
   2. **migrate-and-deploy** (needs job 1) — run `migrate/migrate:v4.18.3` against Neon → `curl` the Render deploy hook.
@@ -169,11 +169,20 @@ Also useful: `go test ./... -cover` for a coverage baseline.
 
 ---
 
-## README-vs-code conflicts (so your resume stays accurate)
+## Documentation reconciliation (resolved)
 
-- **Router:** README says `chi/v5`; actual code/`go.mod` use **gin** (latest commit migrated chi → gin). Say **gin**.
-- **Migration count:** README says 6 pairs; actual is **10 pairs**.
-- **Deploy target:** README says EC2 via SSH; actual is **Render** (+ Neon + Vercel).
-- **"Wait between sends":** documented in plans but **not enforced** in code.
-- **Docker image push:** README says CI "pushes Docker image"; the workflow actually runs tests, migrations, and a Render deploy hook (no registry push found).
-- **Auth throttle:** README says "10 req/second"; the code is a **10-concurrent-request** semaphore, not a per-second rate.
+The README and `PROJECT_DOCUMENTATION.md` were updated to match the code. Corrections applied:
+
+- **Router:** now documents **gin** (was `chi/v5`).
+- **Migration count:** now **10 pairs** (was 6).
+- **Deploy target:** now **Render** + **Neon** + **Vercel** (was EC2 via SSH).
+- **Architecture tree:** now includes the template, email-event, unsubscribe, and event-bus packages.
+- **API surface:** now lists the full **27 routes** (templates, `/emails/stats`, webhooks, unsubscribe).
+- **JWT refresh TTL:** now **7 days** (was 30).
+- **API key format:** now **`mk_live_<12-hex-prefix>.<64-hex-secret>`** (was 8/32).
+- **Rate-limit headers:** now correctly documents `X-RateLimit-Reset` / `Retry-After` on 429 (removed the unsent `X-RateLimit-Remaining`).
+- **Auth throttle:** correctly described as a **10-concurrent-request** semaphore, not per-second.
+- **Docker image push:** removed the claim that CI pushes an image (it runs tests, migrations, and a Render deploy hook).
+- **Email providers:** now documents the pluggable senders (SendGrid, Mailgun, SMTP, Mock).
+
+**Still outstanding in code:** `rate_wait_secs` ("wait between sends") exists in the plan model and DB but is **not enforced** — only the daily limit is. This is flagged in both README and `PROJECT_DOCUMENTATION.md`.
