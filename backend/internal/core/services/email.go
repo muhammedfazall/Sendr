@@ -50,11 +50,8 @@ func (s *EmailService) Send(ctx context.Context, fullKey string, payload domain.
 		return nil, fmt.Errorf("%w: %s", constants.ErrUserNotFound, err)
 	}
 
-	// Step 3 — Redis rate limit check
-	// -1 means unlimited (max plan)
-	if plan.DailyLimit == -1 {
-		// Skip rate limiting entirely for unlimited plans
-	} else {
+	// Step 3 — Redis rate limit check (daily + monthly)
+	if plan.DailyLimit != -1 {
 		allowed, remaining, err := s.rateLimiter.Check(ctx, key.UserID, plan.DailyLimit)
 		if err != nil {
 			return nil, fmt.Errorf("%w: redis check failed: %s", constants.ErrInternalServer, err)
@@ -65,6 +62,16 @@ func (s *EmailService) Send(ctx context.Context, fullKey string, payload domain.
 		}
 	}
 
+	if plan.MonthlyLimit != -1 {
+		allowed, remaining, err := s.rateLimiter.CheckMonthly(ctx, key.UserID, plan.MonthlyLimit)
+		if err != nil {
+			return nil, fmt.Errorf("%w: redis check failed: %s", constants.ErrInternalServer, err)
+		}
+		if !allowed {
+			_ = remaining
+			return nil, constants.ErrMonthlyRateLimitExceeded
+		}
+	}
 	job, err := s.jobs.Enqueue(ctx, key.UserID, key.ID, payload)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", constants.ErrJobQueueFull, err)

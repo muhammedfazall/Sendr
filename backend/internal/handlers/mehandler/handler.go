@@ -35,7 +35,8 @@ func (h *Handler) Get(c *gin.Context) {
 	}
 
 	usageToday, remaining := h.usageSnapshot(c, userID, plan.DailyLimit)
-	writeProfile(c, http.StatusOK, user, plan, usageToday, remaining)
+	usageMonth, remainingMonthly := h.usageSnapshotMonthly(c, userID, plan.MonthlyLimit)
+	writeProfile(c, http.StatusOK, user, plan, usageToday, remaining, usageMonth, remainingMonthly)
 }
 
 // PATCH /me updates editable profile fields.
@@ -72,7 +73,8 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 
 	usageToday, remaining := h.usageSnapshot(c, userID, plan.DailyLimit)
-	writeProfile(c, http.StatusOK, user, plan, usageToday, remaining)
+	usageMonth, remainingMonthly := h.usageSnapshotMonthly(c, userID, plan.MonthlyLimit)
+	writeProfile(c, http.StatusOK, user, plan, usageToday, remaining, usageMonth, remainingMonthly)
 }
 
 func (h *Handler) usageSnapshot(c *gin.Context, userID string, dailyLimit int) (int, int) {
@@ -103,6 +105,33 @@ func (h *Handler) usageSnapshot(c *gin.Context, userID string, dailyLimit int) (
 	return usageToday, remaining
 }
 
+func (h *Handler) usageSnapshotMonthly(c *gin.Context, userID string, monthlyLimit int) (int, int) {
+	usageMonth := 0
+	remaining := monthlyLimit
+	if monthlyLimit < 0 {
+		remaining = -1
+	}
+
+	count, err := h.limiter.GetMonthlyCount(c.Request.Context(), userID)
+	if err != nil {
+		middleware.Logger(c).Error("failed to read monthly usage count", "user_id", userID, "err", err)
+		return usageMonth, remaining
+	}
+
+	usageMonth = count
+	if monthlyLimit < 0 {
+		return usageMonth, -1
+	}
+	if usageMonth > monthlyLimit {
+		usageMonth = monthlyLimit
+	}
+
+	remaining = monthlyLimit - count
+	if remaining < 0 {
+		remaining = 0
+	}
+	return usageMonth, remaining
+}
 func userIDFromRequest(c *gin.Context) (string, bool) {
 	claims, ok := middleware.GetClaims(c)
 	if !ok {
@@ -118,17 +147,21 @@ func userIDFromRequest(c *gin.Context) (string, bool) {
 	return userID, true
 }
 
-func writeProfile(c *gin.Context, status int, user *domain.User, plan *domain.Plan, usageToday, remaining int) {
+func writeProfile(c *gin.Context, status int, user *domain.User, plan *domain.Plan, usageToday, remainingDaily, usageMonth, remainingMonthly int) {
 	response.JSON(c, status, map[string]any{
-		"id":             user.ID,
-		"email":          user.Email,
-		"name":           user.Name,
-		"created_at":     user.CreatedAt,
-		"plan":           plan.Name,
-		"daily_limit":    plan.DailyLimit,
-		"max_api_keys":   plan.MaxAPIKeys,
-		"rate_wait_secs": plan.RateWaitSecs,
-		"usage_today":    usageToday,
-		"remaining":      remaining,
+		"id":               user.ID,
+		"email":            user.Email,
+		"name":             user.Name,
+		"created_at":       user.CreatedAt,
+		"plan":             plan.Name,
+		"daily_limit":      plan.DailyLimit,
+		"monthly_limit":    plan.MonthlyLimit,
+		"max_api_keys":     plan.MaxAPIKeys,
+		"rate_wait_secs":   plan.RateWaitSecs,
+		"usage_today":      usageToday,
+		"usage_this_month": usageMonth,
+		"remaining":        remainingDaily,
+		"remaining_daily":  remainingDaily,
+		"remaining_monthly": remainingMonthly,
 	})
 }

@@ -49,8 +49,8 @@ var (
 	ErrPaymentAlreadyProcessed = errors.New("payment already processed")
 
 	// Rate limiting
-	ErrRateLimitExceeded = errors.New("daily rate limit exceeded")
-
+	ErrRateLimitExceeded        = errors.New("daily rate limit exceeded")
+	ErrMonthlyRateLimitExceeded = errors.New("monthly rate limit exceeded")
 	// Job queue
 	ErrJobQueueFull = errors.New("job queue error")
 

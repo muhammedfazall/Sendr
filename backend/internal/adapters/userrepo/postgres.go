@@ -55,14 +55,14 @@ func (r *PostgresUserRepository) FindWithPlan(ctx context.Context, id string) (*
 	var p domain.Plan
 	err := r.db.QueryRow(ctx,
 		`SELECT u.id, u.email, u.name, u.google_id, u.plan_id, u.created_at,
-				p.id, p.name, p.daily_limit, p.max_api_keys, p.rate_wait_secs, p.price_paise, p.created_at
+				p.id, p.name, p.daily_limit, p.monthly_limit, p.max_api_keys, p.rate_wait_secs, p.price_paise, p.created_at
 		 FROM users u
 		 JOIN plans p ON p.id = u.plan_id
 		 WHERE u.id = $1`,
 		id,
 	).Scan(
 		&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.PlanID, &u.CreatedAt,
-		&p.ID, &p.Name, &p.DailyLimit, &p.MaxAPIKeys, &p.RateWaitSecs, &p.PricePaise, &p.CreatedAt,
+		&p.ID, &p.Name, &p.DailyLimit, &p.MonthlyLimit, &p.MaxAPIKeys, &p.RateWaitSecs, &p.PricePaise, &p.CreatedAt,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("find user with plan: %w", err)

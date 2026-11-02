@@ -21,6 +21,7 @@ type Plan struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
 	DailyLimit   int       `json:"daily_limit"`
+	MonthlyLimit int       `json:"monthly_limit"`
 	MaxAPIKeys   int       `json:"max_api_keys"`
 	RateWaitSecs int       `json:"rate_wait_secs"`
 	PricePaise   int       `json:"price_paise"`

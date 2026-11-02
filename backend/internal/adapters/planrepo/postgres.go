@@ -19,9 +19,9 @@ func New(db *pgxpool.Pool) *PostgresPlanRepository {
 func (r *PostgresPlanRepository) FindByName(ctx context.Context, name string) (*domain.Plan, error) {
 	var p domain.Plan
 	err := r.db.QueryRow(ctx,
-		`SELECT id, name, daily_limit, max_api_keys, rate_wait_secs, price_paise, created_at
+		`SELECT id, name, daily_limit, monthly_limit, max_api_keys, rate_wait_secs, price_paise, created_at
 		 FROM plans WHERE name = $1`, name,
-	).Scan(&p.ID, &p.Name, &p.DailyLimit, &p.MaxAPIKeys, &p.RateWaitSecs, &p.PricePaise, &p.CreatedAt)
+	).Scan(&p.ID, &p.Name, &p.DailyLimit, &p.MonthlyLimit, &p.MaxAPIKeys, &p.RateWaitSecs, &p.PricePaise, &p.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("find plan: %w", err)
 	}
@@ -30,7 +30,7 @@ func (r *PostgresPlanRepository) FindByName(ctx context.Context, name string) (*
 
 func (r *PostgresPlanRepository) ListAll(ctx context.Context) ([]domain.Plan, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id, name, daily_limit, max_api_keys, rate_wait_secs, price_paise, created_at
+		`SELECT id, name, daily_limit, monthly_limit, max_api_keys, rate_wait_secs, price_paise, created_at
 		 FROM plans ORDER BY price_paise ASC`,
 	)
 	if err != nil {
@@ -41,7 +41,7 @@ func (r *PostgresPlanRepository) ListAll(ctx context.Context) ([]domain.Plan, er
 	var plans []domain.Plan
 	for rows.Next() {
 		var p domain.Plan
-		if err := rows.Scan(&p.ID, &p.Name, &p.DailyLimit, &p.MaxAPIKeys,
+		if err := rows.Scan(&p.ID, &p.Name, &p.DailyLimit, &p.MonthlyLimit, &p.MaxAPIKeys,
 			&p.RateWaitSecs, &p.PricePaise, &p.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan plan: %w", err)
 		}

@@ -28,7 +28,6 @@ end
 local remaining = limit - current
 return {1, remaining}
 `)
-
 func New(rdb *redis.Client) *RedisRateLimiter {
 	return &RedisRateLimiter{rdb: rdb}
 }
@@ -70,6 +69,45 @@ func (r *RedisRateLimiter) GetCount(ctx context.Context, userID string) (int, er
 	}
 	if err != nil {
 		return 0, fmt.Errorf("ratelimit get count: %w", err)
+	}
+	return val, nil
+}
+
+// CheckMonthly atomically reserves one send for this month if within limit.
+func (r *RedisRateLimiter) CheckMonthly(ctx context.Context, userID string, limit int) (bool, int, error) {
+	key := fmt.Sprintf("usage_monthly:%s:%s", userID, time.Now().UTC().Format("2006-01"))
+
+	res, err := checkScript.Run(ctx, r.rdb, []string{key}, limit, int((32 * 24 * time.Hour).Seconds())).Result()
+	if err != nil {
+		return false, 0, fmt.Errorf("ratelimit monthly script: %w", err)
+	}
+	values, ok := res.([]any)
+	if !ok || len(values) != 2 {
+		return false, 0, fmt.Errorf("ratelimit monthly script returned unexpected result")
+	}
+
+	allowed, ok := values[0].(int64)
+	if !ok {
+		return false, 0, fmt.Errorf("ratelimit monthly script returned invalid allowed value")
+	}
+	remaining, ok := values[1].(int64)
+	if !ok {
+		return false, 0, fmt.Errorf("ratelimit monthly script returned invalid remaining value")
+	}
+
+	return allowed == 1, int(remaining), nil
+}
+
+// GetMonthlyCount returns this month's usage count without incrementing.
+func (r *RedisRateLimiter) GetMonthlyCount(ctx context.Context, userID string) (int, error) {
+	key := fmt.Sprintf("usage_monthly:%s:%s", userID, time.Now().UTC().Format("2006-01"))
+
+	val, err := r.rdb.Get(ctx, key).Int()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("ratelimit get monthly count: %w", err)
 	}
 	return val, nil
 }

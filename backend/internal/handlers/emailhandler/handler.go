@@ -197,6 +197,11 @@ func (h *Handler) handleSendError(c *gin.Context, err error) {
 		c.Header("Retry-After", strconv.FormatInt(reset-time.Now().Unix(), 10))
 		response.Error(c, http.StatusTooManyRequests, "rate_limit_exceeded", "daily email limit reached")
 
+	case errors.Is(err, constants.ErrMonthlyRateLimitExceeded):
+		reset := nextMonthEndUTC()
+		c.Header("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
+		c.Header("Retry-After", strconv.FormatInt(reset-time.Now().Unix(), 10))
+		response.Error(c, http.StatusTooManyRequests, "monthly_rate_limit_exceeded", "monthly email limit reached")
 	case errors.Is(err, constants.ErrAPIKeyInvalid),
 		errors.Is(err, constants.ErrAPIKeyRevoked),
 		errors.Is(err, constants.ErrAPIKeyNotFound):
@@ -216,6 +221,11 @@ func nextMidnightUTC() int64 {
 	return midnight.Unix()
 }
 
+func nextMonthEndUTC() int64 {
+	now := time.Now().UTC()
+	end := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+	return end.Unix()
+}
 func userFromClaims(c *gin.Context) string {
 	claims, ok := middleware.GetClaims(c)
 	if !ok {
