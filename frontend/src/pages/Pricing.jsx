@@ -11,12 +11,12 @@ const PLAN_FEATURES = {
   pro: {
     color: '#00d084',
     icon: '⚡',
-    features: ['Unlimited/day', '50,000 emails/month', '5 API keys'],
+    features: ['No daily cap', '50,000 emails/month', '5 API keys'],
   },
   max: {
     color: '#a78bfa',
     icon: '🚀',
-    features: ['Unlimited/day', '100,000 emails/month', 'Unlimited API keys'],
+    features: ['No daily cap', '100,000 emails/month', 'Unlimited API keys'],
   },
 }
 

@@ -420,7 +420,7 @@ export default function Landing() {
             period="month"
             highlighted
             features={[
-              'Unlimited emails / day',
+              'No daily cap',
               '50,000 emails / month',
               '5 API keys',
               'Job status tracking',
@@ -433,7 +433,7 @@ export default function Landing() {
             price="₹999"
             period="month"
             features={[
-              'Unlimited emails / day',
+              'No daily cap',
               '100,000 emails / month',
               'Unlimited API keys',
               'Priority support',
