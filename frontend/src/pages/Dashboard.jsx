@@ -18,7 +18,7 @@ const STATUS_LABEL = {
 }
 
 function formatLimit(value, unit = '') {
-  if (value < 0) return 'Unlimited'
+  if (value < 0) return 'No cap'
   const formatted = Number(value ?? 0).toLocaleString()
   return unit ? `${formatted} ${unit}` : formatted
 }

@@ -111,7 +111,7 @@ export default function Profile() {
   }
 
   const joined = profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : 'Unknown'
-  const dailyLimit = profile?.daily_limit < 0 ? 'Unlimited' : profile?.daily_limit?.toLocaleString()
+  const dailyLimit = profile?.daily_limit < 0 ? 'No cap' : profile?.daily_limit?.toLocaleString()
   const maxKeys = profile?.max_api_keys < 0 ? 'Unlimited' : profile?.max_api_keys?.toLocaleString()
 
   return (

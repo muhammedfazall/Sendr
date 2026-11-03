@@ -242,8 +242,8 @@ export default function Landing() {
           <Reveal delay={400}>
             <div className="hero__stats">
               <div className="hero__stat">
-                <span className="hero__stat-value">Unlimited</span>
-                <span className="hero__stat-label">Emails on Max</span>
+                <span className="hero__stat-value">100k</span>
+                <span className="hero__stat-label">Emails/mo on Max</span>
               </div>
               <div className="hero__stat-divider" />
               <div className="hero__stat">
