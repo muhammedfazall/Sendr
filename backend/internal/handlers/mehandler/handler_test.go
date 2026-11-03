@@ -37,17 +37,32 @@ func (m *mockUserRepo) UpdatePlan(ctx context.Context, userID, planName string) 
 }
 
 type mockLimiter struct {
-	getCountFn func(ctx context.Context, userID string) (int, error)
-	checkFn    func(ctx context.Context, userID string, limit int) (bool, int, error)
+	getCountFn        func(ctx context.Context, userID string) (int, error)
+	getMonthlyCountFn func(ctx context.Context, userID string) (int, error)
+	checkFn           func(ctx context.Context, userID string, limit int) (bool, int, error)
 }
 
 func (m *mockLimiter) GetCount(ctx context.Context, userID string) (int, error) {
-	return m.getCountFn(ctx, userID)
+	if m.getCountFn != nil {
+		return m.getCountFn(ctx, userID)
+	}
+	return 0, nil
 }
 func (m *mockLimiter) Check(ctx context.Context, userID string, limit int) (bool, int, error) {
-	return m.checkFn(ctx, userID, limit)
+	if m.checkFn != nil {
+		return m.checkFn(ctx, userID, limit)
+	}
+	return true, limit, nil
 }
-
+func (m *mockLimiter) CheckMonthly(ctx context.Context, userID string, limit int) (bool, int, error) {
+	return true, limit, nil
+}
+func (m *mockLimiter) GetMonthlyCount(ctx context.Context, userID string) (int, error) {
+	if m.getMonthlyCountFn != nil {
+		return m.getMonthlyCountFn(ctx, userID)
+	}
+	return 0, nil
+}
 func runHandler(method, target, body string, claims jwt.MapClaims, h gin.HandlerFunc) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	req := httptest.NewRequest(method, target, strings.NewReader(body))

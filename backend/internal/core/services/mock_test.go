@@ -47,7 +47,7 @@ func (m *mockUserRepo) Upsert(_ context.Context, googleID, email, name string) (
 	}
 	m.users[user.ID] = user
 	if _, ok := m.plans["plan-free"]; !ok {
-		m.plans["plan-free"] = &domain.Plan{ID: "plan-free", Name: "free", DailyLimit: 5, MaxAPIKeys: 1, RateWaitSecs: 30, PricePaise: 0}
+		m.plans["plan-free"] = &domain.Plan{ID: "plan-free", Name: "free", DailyLimit: 5, MonthlyLimit: 3000, MaxAPIKeys: 1, RateWaitSecs: 30, PricePaise: 0}
 	}
 	return user, nil
 }
@@ -282,9 +282,9 @@ type mockPlanRepo struct {
 func newMockPlanRepo() *mockPlanRepo {
 	m := &mockPlanRepo{}
 	m.plans = []domain.Plan{
-		{ID: "plan-free", Name: "free", DailyLimit: 5, MaxAPIKeys: 1, RateWaitSecs: 30, PricePaise: 0},
-		{ID: "plan-pro", Name: "pro", DailyLimit: 10, MaxAPIKeys: 3, RateWaitSecs: 5, PricePaise: 29900},
-		{ID: "plan-max", Name: "max", DailyLimit: -1, MaxAPIKeys: -1, RateWaitSecs: 0, PricePaise: 99900},
+		{ID: "plan-free", Name: "free", DailyLimit: 5, MonthlyLimit: 3000, MaxAPIKeys: 1, RateWaitSecs: 30, PricePaise: 0},
+		{ID: "plan-pro", Name: "pro", DailyLimit: 10, MonthlyLimit: 50000, MaxAPIKeys: 3, RateWaitSecs: 5, PricePaise: 29900},
+		{ID: "plan-max", Name: "max", DailyLimit: -1, MonthlyLimit: -1, MaxAPIKeys: -1, RateWaitSecs: 0, PricePaise: 99900},
 	}
 	return m
 }
@@ -324,6 +324,16 @@ func (m *mockRateLimiter) GetCount(_ context.Context, _ string) (int, error) {
 	return m.count, nil
 }
 
+func (m *mockRateLimiter) CheckMonthly(_ context.Context, _ string, _ int) (bool, int, error) {
+	if m.checkErr != nil {
+		return false, 0, m.checkErr
+	}
+	return m.allow, m.remaining, nil
+}
+
+func (m *mockRateLimiter) GetMonthlyCount(_ context.Context, _ string) (int, error) {
+	return m.count, nil
+}
 // mockAPIKeyService implements ports.APIKeyService for the email service to use.
 type mockAPIKeyService struct {
 	keys  map[string]*domain.APIKey
