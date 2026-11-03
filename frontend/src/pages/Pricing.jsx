@@ -6,17 +6,17 @@ const PLAN_FEATURES = {
   free: {
     color: '#666',
     icon: '📧',
-    features: ['5 emails/day', '30 sec wait between sends', '1 API key'],
+    features: ['100 emails/day', '3,000 emails/month', '1 API key'],
   },
   pro: {
     color: '#00d084',
     icon: '⚡',
-    features: ['10 emails/day', '5 sec wait between sends', '3 API keys'],
+    features: ['Unlimited/day', '50,000 emails/month', '5 API keys'],
   },
   max: {
     color: '#a78bfa',
     icon: '🚀',
-    features: ['Unlimited emails', 'No wait limit', 'Unlimited API keys'],
+    features: ['Unlimited/day', '100,000 emails/month', 'Unlimited API keys'],
   },
 }
 

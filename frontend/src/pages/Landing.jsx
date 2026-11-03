@@ -407,9 +407,9 @@ export default function Landing() {
             price="₹0"
             period="forever"
             features={[
-              '5 emails / day',
+              '100 emails / day',
+              '3,000 emails / month',
               '1 API key',
-              '30s wait between sends',
               'Job status tracking',
             ]}
           />
@@ -420,9 +420,9 @@ export default function Landing() {
             period="month"
             highlighted
             features={[
-              '10 emails / day',
-              '3 API keys',
-              '5s wait between sends',
+              'Unlimited emails / day',
+              '50,000 emails / month',
+              '5 API keys',
               'Job status tracking',
               'Email support',
             ]}
@@ -434,8 +434,8 @@ export default function Landing() {
             period="month"
             features={[
               'Unlimited emails / day',
+              '100,000 emails / month',
               'Unlimited API keys',
-              'No wait between sends',
               'Priority support',
               'Dedicated throughput',
             ]}
