@@ -225,8 +225,8 @@ export default function Landing() {
           </Reveal>
           <Reveal delay={200}>
             <p className="hero__subtitle">
-              A blazing-fast email API with queued delivery, automatic retries,
-              and real-time status tracking. Ship emails from your app in minutes, not days.
+              A simple email API with queued delivery, automatic retries,
+              and real-time status tracking. Start sending from your app in minutes.
             </p>
           </Reveal>
           <Reveal delay={300}>
@@ -247,13 +247,13 @@ export default function Landing() {
               </div>
               <div className="hero__stat-divider" />
               <div className="hero__stat">
-                <span className="hero__stat-value"><AnimatedNumber target={99} suffix="%" duration={1500} /></span>
-                <span className="hero__stat-label">Delivery Rate</span>
+                <span className="hero__stat-value">3</span>
+                <span className="hero__stat-label">Email Providers</span>
               </div>
               <div className="hero__stat-divider" />
               <div className="hero__stat">
-                <span className="hero__stat-value">&lt;2s</span>
-                <span className="hero__stat-label">Queue Latency</span>
+                <span className="hero__stat-value">Free</span>
+                <span className="hero__stat-label">To Start</span>
               </div>
             </div>
           </Reveal>
@@ -263,15 +263,7 @@ export default function Landing() {
         </Reveal>
       </section>
 
-      {/* ═══ LOGOS / TRUST ═══ */}
-      <section className="trust">
-        <p className="trust__label">Built with modern, battle-tested infrastructure</p>
-        <div className="trust__logos">
-          {['Go', 'PostgreSQL', 'Redis', 'SendGrid', 'Docker'].map((name) => (
-            <div key={name} className="trust__logo mono">{name}</div>
-          ))}
-        </div>
-      </section>
+
 
       {/* ═══ FEATURES ═══ */}
       <section id="features" className="features">
@@ -294,7 +286,7 @@ export default function Landing() {
               </svg>
             }
             title="Queued Delivery"
-            desc="Emails are queued and processed asynchronously. Get a 202 response instantly while we handle delivery in the background."
+            desc="Emails are queued and processed in the background so your app can respond quickly."
           />
           <FeatureCard
             delay={80}
@@ -305,7 +297,7 @@ export default function Landing() {
               </svg>
             }
             title="Automatic Retries"
-            desc="Failed deliveries are retried up to 3 times with exponential backoff. No emails lost to transient failures."
+            desc="Transient failures are retried with backoff to improve delivery reliability."
           />
           <FeatureCard
             delay={160}
@@ -315,8 +307,8 @@ export default function Landing() {
                 <path d="M7 11V7a5 5 0 0110 0v4" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             }
-            title="Secure API Keys"
-            desc="SHA-256 hashed keys with revocable access. Manage multiple keys per project with fine-grained control."
+            title="API Keys"
+            desc="Create and revoke API keys from your dashboard for secure access."
           />
           <FeatureCard
             delay={240}
@@ -326,30 +318,8 @@ export default function Landing() {
                 <path d="M12 6v6l4 2" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             }
-            title="Real-time Status"
-            desc="Track every email from pending to delivered. Poll job status with simple GET requests for full visibility."
-          />
-          <FeatureCard
-            delay={320}
-            icon={
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M2 17l10 5 10-5M2 12l10 5 10-5" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            }
-            title="Rate Limiting"
-            desc="Built-in Redis-powered rate limiting per plan. Clear headers tell your app exactly when limits reset."
-          />
-          <FeatureCard
-            delay={400}
-            icon={
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            }
-            title="Dead Letter Queue"
-            desc="Permanently failed emails are captured in a DLQ for review. Never lose track of delivery issues."
+            title="Status & History"
+            desc="Track job status and view email history from the dashboard."
           />
         </div>
       </section>
@@ -437,7 +407,6 @@ export default function Landing() {
               '100,000 emails / month',
               'Unlimited API keys',
               'Priority support',
-              'Dedicated throughput',
             ]}
           />
         </div>
@@ -449,7 +418,7 @@ export default function Landing() {
         <Reveal>
           <h2 className="cta__title">Ready to start sending?</h2>
           <p className="cta__desc">
-            Join developers who trust Sendr for reliable, scalable email delivery. Free forever — no credit card needed.
+            Create an account and start sending emails with the API.
           </p>
           <Link to="/login" className="btn btn--primary btn--lg cta__btn">
             Create Your Free Account <ArrowRight size={16} />
