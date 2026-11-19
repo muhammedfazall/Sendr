@@ -29,7 +29,7 @@
 - Google OAuth authentication
 - API key-based access
 - Tiered subscription plans with Razorpay payment integration
-- Rate limiting per plan (daily email limits)
+- Rate limiting per plan (daily + monthly email quotas)
 - Pluggable email providers (SendGrid, Mailgun, SMTP, Mock)
 - Reusable, server-rendered email templates
 - Automatic retries with exponential backoff
@@ -52,6 +52,7 @@
 | Payments | Razorpay |
 | JWT | RS256 (RSA 2048-bit) |
 | Frontend | React 19 + Vite 8 |
+| Routing | React Router 7 |
 | CSS | Tailwind CSS v4 |
 | Containerization | Docker + Docker Compose |
 | CI/CD | GitHub Actions |
@@ -104,7 +105,7 @@ backend/
 │   ├── constants/       # Durations + error definitions
 │   ├── helpers/         # API key generation + SHA-256 hashing
 │   └── response/        # HTTP response helpers
-├── migrations/          # Database migrations (10 pairs)
+├── migrations/          # Database migrations (11 pairs)
 ├── Dockerfile           # Multi-stage production build
 └── Dockerfile.migrate   # Migration runner image
 
@@ -138,7 +139,7 @@ frontend/
 ### Data Flow
 
 ```
-User Request → API Key Validation → Rate Limit Check → Job Enqueue → 202 Accepted
+User Request → API Key Validation → Daily + Monthly Quota Check → Job Enqueue → 202 Accepted
                                                                          ↓
                                                               Background Worker
                                                                          ↓
@@ -161,12 +162,13 @@ User Request → API Key Validation → Rate Limit Check → Job Enqueue → 202
 | id | UUID | Primary key |
 | name | TEXT | Plan name (free/pro/max) |
 | daily_limit | INT | Maximum emails per day (-1 = unlimited) |
+| monthly_limit | INT | Maximum emails per calendar month (-1 = unlimited) |
 | max_api_keys | INT | Maximum API keys per user (-1 = unlimited) |
-| rate_wait_secs | INT | Minimum seconds between email sends (0 = no wait) |
+| rate_wait_secs | INT | Legacy "minimum seconds between sends" field (0 = no wait; not enforced) |
 | price_paise | INT | Monthly price in paise (0 = free) |
 | created_at | TIMESTAMPTZ | Creation timestamp |
 
-> Seeded in migration 000004 then updated with the final limits in migration 000006.
+> Seeded in migration 000004, given plan limits in 000006, and given the final daily/monthly quotas in 000011.
 
 #### `users`
 | Column | Type | Description |
@@ -311,9 +313,9 @@ Indexes: `idx_payments_user_id`, `idx_payments_order_id`.
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/emails/send` | API Key | Queue an email (enforces rate limit) |
+| `POST` | `/emails/send` | API Key | Queue an email (enforces daily + monthly quotas) |
 | `GET` | `/emails/:id` | API Key | Get job status |
-| `GET` | `/emails` | JWT | List email history (`?status=&limit=&offset=`) |
+| `GET` | `/emails` | JWT | List email history (`?status=&limit=&offset=`, limit ≤ 100) |
 | `GET` | `/emails/stats` | JWT | Aggregate delivery stats |
 
 ### Templates (JWT)
@@ -377,6 +379,8 @@ The sender is selected at startup by `EMAIL_PROVIDER`:
 | SMTP | `smtp` | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` |
 | Mock | `mock` | — (no actual send; useful for tests/load) |
 
+SendGrid and Mailgun support CC/BCC, custom headers, tags, and attachments. SMTP uses STARTTLS and sends To recipients with text/HTML bodies only (no CC/BCC/attachments).
+
 Errors are classified as retryable (network, 5xx) or non-retryable (4xx) by `emailsender.IsRetryable`.
 
 ### Templates
@@ -438,26 +442,28 @@ PENDING → PROCESSING → SENT
 
 ## Rate Limiting
 
-- **Mechanism**: Redis fixed-window counter, incremented atomically via a Lua script
-- **Key Format**: `rate_limit:<userID>:<YYYY-MM-DD>`, TTL 25 hours
-- **Window**: UTC midnight to midnight
-- **Unlimited plans** (`daily_limit = -1`) skip the limiter entirely
-- **On 429**: `X-RateLimit-Reset` (unix seconds) and `Retry-After` (seconds) headers
-- **Current usage**: `GET /me` returns `usage_today` and `remaining`
+- **Mechanism**: Redis fixed-window counters, incremented atomically via a Lua script
+- **Daily key**: `rate_limit:<userID>:<YYYY-MM-DD>`, TTL 25 hours; window is UTC midnight to midnight
+- **Monthly key**: `usage_monthly:<userID>:<YYYY-MM>`, TTL 32 days; window is the calendar month (UTC)
+- **Unlimited plans** (`daily_limit = -1` or `monthly_limit = -1`) skip the corresponding check
+- **On daily 429**: `429 rate_limit_exceeded`; **on monthly 429**: `429 monthly_rate_limit_exceeded`
+- **Headers on 429**: `X-RateLimit-Reset` (unix seconds) and `Retry-After` (seconds)
+- **Current usage**: `GET /me` returns `usage_today`, `remaining`, `usage_this_month`, and `remaining_monthly`
+- Both counters are checked and reserved before a job is enqueued; rejected requests do not increment usage
 
 ---
 
 ## Plans & Limits
 
-| Plan | Daily Limit | Max API Keys | Wait Between Sends | Price (INR) |
-|------|-------------|-------------|-------------------|-------------|
-| free | 5 emails/day | 1 | 30 seconds | ₹0 (free forever) |
-| pro | 10 emails/day | 3 | 5 seconds | ₹299/month |
-| max | Unlimited | Unlimited | None | ₹999/month |
+| Plan | Daily Limit | Monthly Limit | Max API Keys | Price (INR) |
+|------|-------------|---------------|--------------|-------------|
+| free | 100 emails/day | 3,000 emails/month | 1 | ₹0 (free forever) |
+| pro | Unlimited | 50,000 emails/month | 5 | ₹299/month |
+| max | Unlimited | 100,000 emails/month | Unlimited | ₹999/month |
 
-> **Note**: `daily_limit = -1` means unlimited. `max_api_keys = -1` means unlimited. `rate_wait_secs = 0` means no wait.
+> **Note**: `daily_limit = -1`, `monthly_limit = -1`, and `max_api_keys = -1` mean unlimited.
 
-> **Enforcement note**: `rate_wait_secs` exists in the plan model and DB but is **not currently enforced** — only the daily limit is enforced. See `PROJECT_BRIEF.md`.
+> **Legacy field**: `rate_wait_secs` still exists in the plan model and DB, but all seeded plans now use `0` and no code enforces it — only the daily and monthly quotas are applied. See `PROJECT_BRIEF.md`.
 
 **To upgrade**: Users upgrade through the Pricing page in the dashboard. Razorpay handles payment processing, and the plan is upgraded automatically after successful payment verification (via frontend verification or the Razorpay webhook).
 
@@ -510,7 +516,7 @@ Landing Page (/) → Login (/login) → Google OAuth → Callback (/callback) �
 |-------|-----------|------|-------------|
 | `/` | Landing | Public | Product landing page |
 | `/login` | Login | Public | Google OAuth sign-in |
-| `/callback` | Callback | Public | OAuth callback handler |
+| `/callback` | Callback | Public | OAuth callback handler (reads `?token=` and starts the session) |
 | `/dashboard` | Dashboard | Protected | Main dashboard with stats |
 | `/keys` | APIKeys | Protected | API key management |
 | `/send` | SendEmail | Protected | Email composer |
@@ -521,6 +527,8 @@ Landing Page (/) → Login (/login) → Google OAuth → Callback (/callback) �
 ### API Client
 
 `src/lib/config.js` resolves the API base URL (`VITE_API_URL`, else `https://sendr-api.onrender.com` in production or `http://localhost:8080` in dev) and rejects any host not on the allowlist (`localhost:8080`, `127.0.0.1:8080`, `sendr.app`, `sendr-api.onrender.com`).
+
+`src/lib/api.js` keeps the access token in `sessionStorage`, refreshes it silently when it is within 60 seconds of expiry, and retries once on a `401`. If refresh fails it clears local state and emits `sendr:session-expired`, which shows the session-expired screen.
 
 ### Landing Page
 
@@ -571,7 +579,7 @@ The landing page (`/`) is the public-facing entry point with the following secti
 | `OAUTH_STATE_SECRET` | Yes | OAuth state HMAC secret | random-string |
 | `RAZORPAY_KEY_ID` | Yes | Razorpay key ID | rzp_test_xxx |
 | `RAZORPAY_KEY_SECRET` | Yes | Razorpay key secret | xxx |
-| `RAZORPAY_WEBHOOK_SECRET` | Yes | Razorpay webhook secret | xxx |
+| `RAZORPAY_WEBHOOK_SECRET` | Yes* | Razorpay webhook HMAC secret | xxx |
 | `EMAIL_PROVIDER` | No | sendgrid/mailgun/smtp/mock | sendgrid |
 | `SENDGRID_KEY` | Cond. | SendGrid API key (when provider = sendgrid) | SG.xxx |
 | `MAILGUN_DOMAIN` / `MAILGUN_KEY` / `MAILGUN_BASE_URL` | Cond. | Mailgun config (when provider = mailgun) | — |
@@ -585,7 +593,7 @@ The landing page (`/`) is the public-facing entry point with the following secti
 | `ALLOWED_ORIGINS` | No | CORS origins (comma-separated) | FRONTEND_URL |
 | `VITE_API_URL` | No | Frontend: backend API URL | http://localhost:8080 |
 
-\* Supply either the `_PEM` or `_PATH` variant. CORS origins and URLs are validated at startup; `*` is rejected.
+\* Supply either the `_PEM` or `_PATH` variant. `RAZORPAY_WEBHOOK_SECRET` is not required at startup, but the Razorpay webhook rejects requests if it is unset or wrong. CORS origins and URLs are validated at startup; `*` is rejected.
 
 ### Generating Keys
 
@@ -609,6 +617,8 @@ openssl rsa -in private.pem -pubout -out public.pem
 | Zombie reclaim | every 60 seconds | `internal/worker/worker.go:64` |
 | Job lock duration | 30 seconds | `internal/adapters/jobrepo/postgres.go:54` |
 | Auth throttle | 10 concurrent requests | `internal/router/router.go:94` |
+| Daily quota window | UTC day, 25h TTL | `internal/adapters/ratelimit/redis.go` |
+| Monthly quota window | UTC calendar month, 32d TTL | `internal/adapters/ratelimit/redis.go` |
 | HTTP server timeouts | read 15s / write 15s / idle 60s | `internal/app/app.go:101` |
 | Request body limit | 1 MB | `internal/router/router.go:48` |
 
@@ -637,7 +647,7 @@ openssl rsa -in private.pem -pubout -out public.pem
    - Consider read replicas
 
 5. **Rate Limit Increase**
-   - Create/update a custom plan row in the database
+   - Create/update a custom plan row in the database (`daily_limit`, `monthly_limit`, `max_api_keys`; `-1` = unlimited)
    - Update the user's `plan_id`
 
 ---
@@ -653,7 +663,7 @@ openssl rsa -in private.pem -pubout -out public.pem
 - **Unsubscribe Tokens**: HMAC-SHA256 verified with `hmac.Equal`
 - **Input Validation**: recipient parsing, 998-char subject cap, 50 KB body cap, 1 MB body limit
 - **CORS**: validated origin allowlist (`*` rejected at startup)
-- **Abuse Controls**: auth-route throttle (10 concurrent), per-plan daily rate limit, request ID + structured logging
+- **Abuse Controls**: auth-route throttle (10 concurrent), per-plan daily + monthly quotas, request ID + structured logging
 - **Cookies**: `Secure`, `HttpOnly`, `SameSite` set appropriately; refresh cookie scoped to `/auth`
 
 ### Recommendations for Production
@@ -708,6 +718,8 @@ cd ../frontend
 npm install
 npm run dev
 ```
+
+From the repository root, the `Makefile` wraps the common steps: `make infra`, `make migrate`, `make backend`, `make frontend`, `make test`, and `make down`.
 
 ### Production Deployment
 

@@ -38,7 +38,7 @@ Both names share the same email, so this is one person. **No teammate commits or
 | Router, app bootstrap & graceful shutdown — `internal/router`, `internal/app`, `cmd/server` | 12 | ~271 |
 | Config, helpers, DB, constants, response — `pkg/` | 9 (config) | ~608 |
 | Health checks — `internal/health/` | 4 | ~203 |
-| Database schema — `migrations/` | 5 | 10 up + 10 down scripts |
+| Database schema - `migrations/` | 5 | 11 up + 11 down scripts |
 | React frontend SPA — `frontend/src/` | 18 | ~3,494 (JS/JSX/CSS) |
 | Automated test suite | — | ~3,658 (188 test functions) |
 | CI/CD pipeline — `.github/workflows/deploy.yml` | 1 | — |
@@ -54,7 +54,7 @@ Both names share the same email, so this is one person. **No teammate commits or
 3. **Send an email with one HTTP call** — `POST /emails/send` accepts JSON and returns `202 Accepted` with a job ID immediately.
 4. **Track every email's status** — poll `GET /emails/:id` (`pending → processing → sent/failed`) and browse full history in the dashboard.
 5. **Automatic retries for transient failures** — failed sends retry with backoff; permanently bad ones go to a dead-letter queue.
-6. **Per-plan daily sending limits** — Redis-backed daily counter returns rate-limit headers and blocks abuse.
+6. **Per-plan daily and monthly sending quotas** — Redis-backed counters enforce both windows, return rate-limit headers, and block abuse.
 7. **Upgrade plans with real payments** — Razorpay checkout plus a signature-verified webhook that upgrades the account.
 8. **Delivery analytics + unsubscribe + templates** — SendGrid event webhooks capture opens/clicks/bounces, every send carries a one-click unsubscribe header, and reusable templates are rendered server-side.
 
@@ -65,7 +65,7 @@ Both names share the same email, so this is one person. **No teammate commits or
 - **Backend services:** 1 Go service (monolith, clean architecture) + 1 React SPA. Internally: **5 core service types** (auth, apikey, email, payment, template) and **12 adapter packages**.
 - **API endpoints:** **27 route registrations** in `internal/router/router.go` (4 public, 5 auth, 14 JWT-protected, 2 API-key-protected, 2 unsubscribe).
 - **Database tables:** **9** (`plans`, `users`, `api_keys`, `jobs`, `dlq`, `payments`, `email_events`, `unsubscriptions`, `templates`).
-- **Migrations:** **10 pairs** (10 up + 10 down).
+- **Migrations:** **11 pairs** (11 up + 11 down).
 - **Background workers:** **1 job worker loop** (10 concurrent job goroutines) + **1 in-process event-bus dispatcher**; zombie/reclaim sweep runs on a 60s tick.
 - **Email providers:** **4** pluggable backends (SendGrid, Mailgun, SMTP, Mock).
 - **Tests:** **188 test functions** across **18 test files**, ~**3,658 lines** of Go test code.
@@ -85,12 +85,12 @@ Both names share the same email, so this is one person. **No teammate commits or
 - **Blocks forged payment/webhook calls** — Razorpay signatures are verified with HMAC-SHA256 (`hmac.Equal`), including webhook payloads.
 - **Verifies the paying user** — a payment must belong to the requesting user before a plan upgrade is applied.
 - **Protects accounts** — RS256 JWTs (15-min access, 7-day refresh) with a Redis blacklist on logout; API secrets stored as SHA-256 and compared in constant time (anti-timing-attack).
-- **Stops abuse** — per-plan daily sending limit (Redis fixed-window counter), a 10-concurrent-request throttle on auth routes, request-ID + structured logging, a 1 MB body cap, and a strict CORS origin allowlist.
+- **Stops abuse** — per-plan daily and monthly sending quotas (Redis fixed-window counters), a 10-concurrent-request throttle on auth routes, request-ID + structured logging, a 1 MB body cap, and a strict CORS origin allowlist.
 - **Enforces sensible input limits** — recipient validation, 998-char subject cap, 50 KB body cap.
 - **Shuts down gracefully** — on SIGINT/SIGTERM the HTTP server drains and the worker finishes in-flight jobs before exit.
 - **Health check** — `GET /health` reports DB and Redis liveness (`ok`/`degraded`).
 
-**Accuracy caveats:** The `rate_wait_secs` "wait between sends" value exists in the plan model and DB but I found **no code that enforces it (NOT FOUND)** — only the daily limit is enforced. No IP allowlisting, MFA, or audit-trail table was found.
+**Accuracy caveats:** The `rate_wait_secs` "wait between sends" value still exists in the plan model and DB, but all seeded plans use `0` and I found **no code that enforces it (NOT FOUND)** — only the daily and monthly quotas are enforced. No IP allowlisting, MFA, or audit-trail table was found.
 
 ---
 
@@ -111,7 +111,7 @@ Both names share the same email, so this is one person. **No teammate commits or
 | Redis timeouts | dial 10s, read/write 5s | `db.go:29` |
 | Auth throttle | 10 concurrent requests | `router.go:94` |
 | Body / subject / body caps | 1 MB / 998 chars / 50 KB | `router.go:48`, `emailhandler` |
-| Rate-limit window | daily, 25h TTL | `ratelimit/redis.go:42` |
+| Rate-limit window | daily (25h TTL) + monthly (32d TTL) | `ratelimit/redis.go` |
 
 **Benchmarks / load tests:** **NOT FOUND** — there are no `func Benchmark…` functions and no load-test scripts in the repo. No published throughput/latency numbers exist.
 
@@ -174,7 +174,7 @@ Also useful: `go test ./... -cover` for a coverage baseline.
 The README and `PROJECT_DOCUMENTATION.md` were updated to match the code. Corrections applied:
 
 - **Router:** now documents **gin** (was `chi/v5`).
-- **Migration count:** now **10 pairs** (was 6).
+- **Migration count:** now **11 pairs** (was 6).
 - **Deploy target:** now **Render** + **Neon** + **Vercel** (was EC2 via SSH).
 - **Architecture tree:** now includes the template, email-event, unsubscribe, and event-bus packages.
 - **API surface:** now lists the full **27 routes** (templates, `/emails/stats`, webhooks, unsubscribe).
@@ -185,4 +185,7 @@ The README and `PROJECT_DOCUMENTATION.md` were updated to match the code. Correc
 - **Docker image push:** removed the claim that CI pushes an image (it runs tests, migrations, and a Render deploy hook).
 - **Email providers:** now documents the pluggable senders (SendGrid, Mailgun, SMTP, Mock).
 
-**Still outstanding in code:** `rate_wait_secs` ("wait between sends") exists in the plan model and DB but is **not enforced** — only the daily limit is. This is flagged in both README and `PROJECT_DOCUMENTATION.md`.
+- **Plans & limits:** now document the final **daily + monthly quotas** (free 100/day + 3,000/month, pro unlimited daily + 50,000/month, max unlimited daily + 100,000/month) and the current API-key caps.
+- **Rate limiting:** now documents the **monthly** Redis counter (`usage_monthly:<userID>:<YYYY-MM>`) and the `monthly_rate_limit_exceeded` 429 response alongside the daily window.
+
+**Still outstanding in code:** `rate_wait_secs` ("wait between sends") exists in the plan model and DB, but all seeded plans use `0` and it is **not enforced** — only the daily and monthly quotas are. This is flagged in both README and `PROJECT_DOCUMENTATION.md`.
